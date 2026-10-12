@@ -11,3 +11,7 @@
 # Human, athena Secure Enclave key (Touch ID)
 # SHA256:yNSBv4tnheZP9bNHOllcLxf1qcXq+LEdqVwE4ebLpEc
 @ChristopherA/athena-se namespaces="git" sk-ecdsa-sha2-nistp256@openssh.com AAAAInNrLWVjZHNhLXNoYTItbmlzdHAyNTZAb3BlbnNzaC5jb20AAAAIbmlzdHAyNTYAAABBBL0PRlODgW4Q0q6XJNAF7jYf+2CDpQCudFFKRHpyrxj1isQljydCmFTx/o7qj/npIMXirDs2pzNEQ0skqhyNFyoAAAAEc3NoOg==
+
+# Human, fleet-soft: shared on-disk ed25519 key, no Touch ID; working commits only, not main
+# SHA256:a61TkTtLFGEYOmdRMbpYGkZwXw2QUrGkAWp3dok8jcw
+@ChristopherA/fleet-soft namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICM+YMv6FoadhtecFcrESpq5ZIhxZzYIKky8C+3Xk0Sy
