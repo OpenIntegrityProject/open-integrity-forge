@@ -14,7 +14,7 @@ Open Integrity Forge moves that authority out of the platform and into the repos
 
 It runs on [Cloudflare Workers](https://developers.cloudflare.com/workers/), [Durable Objects](https://developers.cloudflare.com/durable-objects/), [Queues](https://developers.cloudflare.com/queues/) and [Artifacts](https://developers.cloudflare.com/artifacts/). It is part of the [Open Integrity Project](https://github.com/OpenIntegrityProject), a [Blockchain Commons](https://www.blockchaincommons.com) project.
 
-**Live demo:** https://LIVE-DEMO-HOST (sign in with a passkey, then "Play the story")
+**Live demo:** https://forgedemo.gordianstack.com (sign in with a passkey, then "Play the story")
 
 ## What the demo shows
 
