@@ -1,0 +1,81 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "forge",
+  // The BCTS account. Wrangler sees several accounts, so the configuration names this one.
+  "account_id": "59e8daca08e6d5c24fe04feac5a1a7ae",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-15",
+  // isomorphic-git reads Buffer and a few other Node globals.
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "forge.bcts.dev", "custom_domain": true }],
+  "workers_dev": false,
+  // Bundles the verifier, the page script, the stylesheet and the fonts into public/ before dev and deploy.
+  "build": { "command": "npm run build", "watch_dir": ["browser", "authority", "scripts"] },
+  "assets": {
+    "directory": "public",
+    // The Worker reads public/forge-verify.mjs through this binding, to pin its digest in new repositories.
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/auth/*", "/me", "/me/*", "/operator/*", "/forge/*"]
+  },
+  "vars": {
+    "RP_ID": "forge.bcts.dev",
+    "RP_NAME": "Forge demo",
+    "ORIGIN": "https://forge.bcts.dev",
+    "REFUSAL_FLOOR_MS": "800",
+    // "artifacts" keeps repos in Cloudflare Artifacts; "local" keeps them in the LocalRepo Durable Object.
+    "REPO_HOST": "artifacts",
+    "AGENT_KEY_TTL_S": "3600",
+    "FORK_TOKEN_TTL_S": "900",
+    "AGENT_STEP_MS": "700",
+    // The GitHub mirror: off while MIRROR_OWNER is empty. It also needs the GITHUB_TOKEN secret.
+    "MIRROR_OWNER": "",
+    "MIRROR_GIT_BASE": "https://github.com",
+    "MIRROR_API": "https://api.github.com",
+    // Push subscriptions: the forge makes one per repository when the CF_API_TOKEN secret is set.
+    "CF_ACCOUNT_ID": "59e8daca08e6d5c24fe04feac5a1a7ae",
+    "PUSH_QUEUE": "forge-artifacts-events",
+    "ARTIFACTS_NAMESPACE": "forge-demo"
+  },
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "forge-demo" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "IDENTITY_RECORDS", "class_name": "IdentityRecord" },
+      { "name": "CREDENTIAL_INDEX", "class_name": "CredentialIndex" },
+      { "name": "CHALLENGES", "class_name": "ChallengeStore" },
+      { "name": "MEMBER_NAMES", "class_name": "MemberNameRegistry" },
+      { "name": "CREDENTIAL_LABELS", "class_name": "CredentialLabels" },
+      { "name": "RATE_LIMITS", "class_name": "RateLimiter" },
+      { "name": "CEREMONY_FAILURES", "class_name": "CeremonyFailures" },
+      { "name": "OPERATOR_LOG", "class_name": "OperatorLog" },
+      { "name": "PROJECTS", "class_name": "Project" },
+      { "name": "AGENT_RUNS", "class_name": "AgentRun" },
+      { "name": "PEOPLE", "class_name": "Person" },
+      { "name": "LOCAL_REPOS", "class_name": "LocalRepo" },
+      { "name": "REPO_INDEX", "class_name": "RepoIndex" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "IdentityRecord",
+        "CredentialIndex",
+        "ChallengeStore",
+        "MemberNameRegistry",
+        "CredentialLabels",
+        "RateLimiter",
+        "CeremonyFailures",
+        "OperatorLog",
+        "Project",
+        "AgentRun",
+        "Person",
+        "LocalRepo",
+        "RepoIndex"
+      ]
+    }
+  ],
+  // Artifacts push events. Create the queue once, and one subscription per repository: see scripts/subscribe-pushes.ts.
+  "queues": { "consumers": [{ "queue": "forge-artifacts-events", "max_batch_size": 10, "max_batch_timeout": 1 }] },
+  "observability": { "enabled": true }
+}
