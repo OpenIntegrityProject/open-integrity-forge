@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "forge",
+  "name": "forge-demo",
   // The account that holds gordianstack.com. Wrangler sees several accounts, so the configuration names this one.
   "account_id": "cb3207d4e31a99ec82c9670b3b70dde0",
   "main": "src/index.ts",
