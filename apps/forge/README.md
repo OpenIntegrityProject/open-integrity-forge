@@ -101,7 +101,7 @@ When the deployment sets `MIRROR_OWNER` and the `GITHUB_TOKEN` secret, the page 
 ## Deploy
 
 1. `npx wrangler login`.
-2. The deployment is the BCTS Cloudflare account (`account_id` in `apps/forge/wrangler.jsonc`) at `forge.bcts.dev` (`routes`, `RP_ID`, `ORIGIN`). The account must be on Workers Paid: Artifacts refuses a Free account, and the passkey library needs Paid's CPU time too.
+2. The deployment is the Cloudflare account that holds gordianstack.com (`account_id` in `apps/forge/wrangler.jsonc`) at `forgedemo.gordianstack.com` (`routes`, `RP_ID`, `ORIGIN`). The account must be on Workers Paid: Artifacts refuses a Free account, and the passkey library needs Paid's CPU time too.
 3. Create the queue for Artifacts push events, once: `npx wrangler queues create forge-artifacts-events`.
 4. Optional secrets: `OPERATOR_RECORD_IDS`; `GITHUB_TOKEN` and a `MIRROR_OWNER` value for the mirror; `CF_API_TOKEN` (Queues edit) so the forge subscribes each new repository to push events itself; `ANTHROPIC_API_KEY` so agents can write notes with Claude. Set each with `npx wrangler secret put <NAME>`.
 5. `npx wrangler deploy` from `apps/forge`. The first project creates the `forge-demo` Artifacts namespace.

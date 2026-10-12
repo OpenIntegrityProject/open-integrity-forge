@@ -31,7 +31,7 @@
     "MIRROR_GIT_BASE": "https://github.com",
     "MIRROR_API": "https://api.github.com",
     // Push subscriptions: the forge makes one per repository when the CF_API_TOKEN secret is set.
-    "CF_ACCOUNT_ID": "59e8daca08e6d5c24fe04feac5a1a7ae",
+    "CF_ACCOUNT_ID": "cb3207d4e31a99ec82c9670b3b70dde0",
     "PUSH_QUEUE": "forge-artifacts-events",
     "ARTIFACTS_NAMESPACE": "forge-demo"
   },

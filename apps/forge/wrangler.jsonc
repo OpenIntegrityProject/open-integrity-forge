@@ -1,13 +1,13 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "forge",
-  // The BCTS account. Wrangler sees several accounts, so the configuration names this one.
-  "account_id": "59e8daca08e6d5c24fe04feac5a1a7ae",
+  // The account that holds gordianstack.com. Wrangler sees several accounts, so the configuration names this one.
+  "account_id": "cb3207d4e31a99ec82c9670b3b70dde0",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
   // isomorphic-git reads Buffer and a few other Node globals.
   "compatibility_flags": ["nodejs_compat"],
-  "routes": [{ "pattern": "forge.bcts.dev", "custom_domain": true }],
+  "routes": [{ "pattern": "forgedemo.gordianstack.com", "custom_domain": true }],
   "workers_dev": false,
   // Bundles the verifier, the page script, the stylesheet and the fonts into public/ before dev and deploy.
   "build": { "command": "npm run build", "watch_dir": ["browser", "authority", "scripts"] },
@@ -19,9 +19,9 @@
     "run_worker_first": ["/auth/*", "/me", "/me/*", "/operator/*", "/forge/*"]
   },
   "vars": {
-    "RP_ID": "forge.bcts.dev",
+    "RP_ID": "forgedemo.gordianstack.com",
     "RP_NAME": "Forge demo",
-    "ORIGIN": "https://forge.bcts.dev",
+    "ORIGIN": "https://forgedemo.gordianstack.com",
     "REFUSAL_FLOOR_MS": "800",
     // "artifacts" keeps repos in Cloudflare Artifacts; "local" keeps them in the LocalRepo Durable Object.
     "REPO_HOST": "artifacts",
@@ -33,7 +33,7 @@
     "MIRROR_GIT_BASE": "https://github.com",
     "MIRROR_API": "https://api.github.com",
     // Push subscriptions: the forge makes one per repository when the CF_API_TOKEN secret is set.
-    "CF_ACCOUNT_ID": "59e8daca08e6d5c24fe04feac5a1a7ae",
+    "CF_ACCOUNT_ID": "cb3207d4e31a99ec82c9670b3b70dde0",
     "PUSH_QUEUE": "forge-artifacts-events",
     "ARTIFACTS_NAMESPACE": "forge-demo"
   },
