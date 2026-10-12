@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gordian Stack passkey demo</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="app-bar">
+      <h1>Gordian Stack passkey demo</h1>
+      <span id="signed-in" hidden>
+        <strong id="member-name"></strong>
+        <span class="app-bar-actions">
+          <button id="open-settings" type="button">Settings</button>
+          <button id="logout" type="button">Log out</button>
+        </span>
+      </span>
+      <button id="open-sign-in" class="primary" type="button" hidden>Sign in</button>
+    </header>
+
+    <main>
+      <p id="status" role="status" aria-live="polite"></p>
+      <!-- Where an app built on the library would go. -->
+      <p id="app-signed-out" class="placeholder" hidden>Sign in to try passkeys.</p>
+      <p id="app-signed-in" class="placeholder" hidden>You're signed in with a passkey.</p>
+    </main>
+
+    <dialog id="sign-in" aria-labelledby="sign-in-title">
+      <div class="pane-header">
+      <h2 id="sign-in-title">Sign in</h2>
+      <button class="close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p id="sign-in-status" role="status" aria-live="polite"></p>
+      <section id="entry" hidden>
+        <button class="primary" id="continue" type="button" autofocus>Continue with passkey</button>
+        <div id="choices" hidden>
+          <p id="choices-reason"></p>
+          <form id="register-form">
+            <h3>New here? Register</h3>
+            <label>
+              Member name
+              <input id="register-name" name="memberName" autocomplete="username" required />
+            </label>
+            <button id="name-rules-toggle" class="info-toggle" type="button" aria-label="About member names" aria-expanded="false" aria-controls="name-rules">&#9432;</button>
+            <p id="name-rules" hidden></p>
+            <span id="name-availability" aria-live="polite"></span>
+            <p id="capital-nudge" aria-live="polite" hidden></p>
+            <button class="primary" type="submit">Register with a passkey</button>
+          </form>
+          <form id="recover-form">
+            <h3>Lost your passkeys? Recover</h3>
+            <label>
+              Member name
+              <input name="memberName" autocomplete="username" required />
+            </label>
+            <label>
+              Recovery code
+              <input name="code" autocomplete="off" spellcheck="false" required />
+            </label>
+            <button class="primary" type="submit">Recover with a new passkey</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="rebind" hidden>
+        <h3>Set up a new passkey</h3>
+        <p>An operator created this link for you. It works once.</p>
+        <button class="primary" id="rebind-button" type="button" autofocus>Create a passkey</button>
+      </section>
+    </dialog>
+
+    <dialog id="codes" aria-labelledby="codes-title">
+      <h2 id="codes-title">Your recovery codes</h2>
+      <p id="codes-status" role="status" aria-live="polite"></p>
+      <p>Store these somewhere safe. Each works once, and they will not be shown again.</p>
+      <p id="codes-header"></p>
+      <ol id="code-list"></ol>
+      <button id="codes-copy" type="button">Copy</button>
+      <button id="codes-toggle" type="button">Show as words</button>
+      <label>
+        <input id="codes-saved" type="checkbox" />
+        I have saved my recovery codes
+      </label>
+      <button class="primary" id="codes-done" type="button" disabled>Continue</button>
+    </dialog>
+
+    <dialog id="settings" aria-labelledby="settings-title">
+      <div class="pane-header">
+      <h2 id="settings-title">Settings</h2>
+      <button class="close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p id="settings-status" role="status" aria-live="polite"></p>
+      <p id="rotate-prompt" class="notice" hidden>
+        <span id="rotate-message"></span>
+        <button id="rotate-now" type="button">Replace them now</button>
+      </p>
+
+      <div class="section-heading">
+        <h3>Passkeys</h3>
+        <button id="passkeys-info-toggle" class="info-toggle" type="button" aria-label="About passkeys" aria-expanded="false" aria-controls="passkeys-info">&#9432;</button>
+      </div>
+      <p id="passkeys-info" hidden>Held by is the password manager or security key that stores the passkey, when it can be identified. Synced means that manager can copy the passkey to your other devices. Revoking a passkey stops it signing in, though sessions it already started stay open, and you can't revoke your only one.</p>
+      <table>
+        <thead><tr><th>Label</th><th>Held by</th><th>Synced</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+        <tbody id="credential-rows"></tbody>
+      </table>
+      <p id="device-bound-notice" class="notice" hidden>Each of your passkeys is held on one device and can't be copied to another. If you lose that device, only a recovery code gets you back in. Add a passkey on another device or a security key, and keep your recovery codes somewhere safe.</p>
+      <div class="button-row" role="group" aria-labelledby="add-passkey-label">
+        <span id="add-passkey-label">Add a passkey on:</span>
+        <button id="add-passkey-client-device" type="button">This device</button>
+        <button id="add-passkey-hybrid" type="button">Another device</button>
+        <button id="add-passkey-security-key" type="button">Security key</button>
+      </div>
+
+      <div class="section-heading">
+        <h3>Recovery codes</h3>
+        <button id="codes-info-toggle" class="info-toggle" type="button" aria-label="About recovery codes" aria-expanded="false" aria-controls="codes-info">&#9432;</button>
+      </div>
+      <p id="codes-info" hidden>Recovery codes let you add a new passkey if you lose all of yours, and each one works once. Replacing them gives you a fresh set of 8, shown only once, and every old code stops working straight away, including copies kept elsewhere or split into shares.</p>
+      <button id="rotate-codes" type="button">Replace my recovery codes</button>
+
+      <div class="section-heading">
+        <h3>Sessions</h3>
+        <button id="sessions-info-toggle" class="info-toggle" type="button" aria-label="About sessions" aria-expanded="false" aria-controls="sessions-info">&#9432;</button>
+      </div>
+      <p id="sessions-info" hidden>A session keeps one browser signed in for 7 days. Log out ends this one, and Log out everywhere ends all of them, this one included. Log out everywhere else keeps this one and asks for your passkey first, so someone holding a stolen session can't shut you out.</p>
+      <details id="account-details">
+        <summary>Account details</summary>
+        <p>
+          Record id: <code id="record-id"></code>
+          <button id="copy-record-id" type="button" aria-label="Copy record id">Copy</button>
+          <button id="record-id-info-toggle" class="info-toggle" type="button" aria-label="About the record id" aria-expanded="false" aria-controls="record-id-info">&#9432;</button>
+        </p>
+        <p id="record-id-info" hidden>Your record id names your identity record and never changes, even if every passkey and code does. It isn't secret. To make yourself an operator on your own deployment, add it to the OPERATOR_RECORD_IDS secret.</p>
+        <table>
+          <thead><tr><th>Browser</th><th>Started</th><th>Ends</th></tr></thead>
+          <tbody id="session-rows"></tbody>
+        </table>
+        <div class="button-row">
+          <button id="logout-everywhere" type="button">Log out everywhere</button>
+          <button id="logout-elsewhere" type="button">Log out everywhere else</button>
+        </div>
+      </details>
+
+      <section id="operator" hidden>
+        <div class="section-heading">
+          <h3>Operator</h3>
+          <button id="operator-info-toggle" class="info-toggle" type="button" aria-label="About the operator actions" aria-expanded="false" aria-controls="operator-info">&#9432;</button>
+        </div>
+        <p id="operator-info" hidden>A rebind link lets the member add a new passkey. Send it yourself once you've confirmed who they are; it works once, within 24 hours, and leaves their old passkeys, sessions and codes in place. Suspend signs the member out everywhere and blocks sign-in, recovery and rebind links until you Resume. Remove does the same for good and retires their member name, so nobody can register it again; it can't be undone, and it refuses an operator. Allow name again lets anyone register a retired name, on a new record; the removed member stays removed. Every action here is logged.</p>
+        <form id="operator-form">
+          <label>
+            Member name
+            <input name="memberName" required />
+          </label>
+          <button type="submit">Look up</button>
+        </form>
+        <div id="operator-member" hidden>
+          <table>
+            <tbody id="operator-summary"></tbody>
+          </table>
+          <table>
+            <thead><tr><th>When</th><th>Action</th><th>Operator</th></tr></thead>
+            <tbody id="operator-entries"></tbody>
+          </table>
+        </div>
+        <div id="operator-actions">
+          <button type="button" value="rebind" disabled>Create rebind link</button>
+          <button type="button" value="suspend" disabled>Suspend</button>
+          <button type="button" value="resume" disabled>Resume</button>
+          <button type="button" value="allow-name" disabled>Allow name again</button>
+          <button class="danger" type="button" value="remove" disabled>Remove</button>
+        </div>
+        <p id="operator-result"></p>
+      </section>
+    </dialog>
+  </body>
+</html>

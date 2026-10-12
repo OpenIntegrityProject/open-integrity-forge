@@ -1,0 +1,19 @@
+{
+  "name": "passkey-cloudflare",
+  "version": "0.0.1",
+  "description": "Passkey-only identity for collaborative web apps on Cloudflare Workers and Durable Objects",
+  "license": "BSD-2-Clause-Patent",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser/index.ts",
+    "./gordian": "./src/gordian/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^14.0.2"
+  }
+}
