@@ -293,8 +293,8 @@ describe("invariants", () => {
       userVerification: "preferred",
     });
     expect(registration.pubKeyCredParams).toEqual([
-      { alg: -8, type: "public-key" },
       { alg: -7, type: "public-key" },
+      { alg: -8, type: "public-key" },
     ]);
     expect(registration.attestation).toBe("none");
     expect(registration.timeout).toBe(300_000);

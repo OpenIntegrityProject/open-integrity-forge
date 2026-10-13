@@ -19,8 +19,11 @@ export const CEREMONY_POLICY = {
   residentKey: "required",
   userVerification: "preferred",
   attestation: "none",
-  /** EdDSA (-8) and ES256 (-7) only. */
-  algorithms: [-8, -7],
+  /**
+   * ES256 (-7) and EdDSA (-8) only, ES256 first: an authenticator takes the
+   * first it supports, and only a P-256 passkey can make an OpenSSH signature.
+   */
+  algorithms: [-7, -8],
   timeoutMs: 300_000,
 } as const;
 
