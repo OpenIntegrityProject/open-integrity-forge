@@ -12,7 +12,7 @@ The forge is built on this repository's passkey library and reuses the demo's si
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. The new rules need your approval too.
 3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. The forge checks every proposal against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.
-5. **You promote Ada's change.** Your passkey approves the exact merge: both parents and the resulting tree.
+5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree and the message, as an SSH signature that `git verify-commit` checks.
 6. **Anyone checks it anywhere.** A fresh clone, a laptop or a GitHub mirror gives the same answer, with no forge in the loop.
 
 "Play the story" on the page walks through these steps, and stops where your passkey is needed.
@@ -32,7 +32,7 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 | Rule | Statement |
 | --- | --- |
 | R0 | The first commit of main is the root of trust, and its hash is the repository id. It is an empty commit whose committer is the fingerprint of the passkey that signed it, as an SSH signature. |
-| R1 | Each later commit of main carries an approval from a promoter in the policy of its first parent. The commit after the root sets the first policy, and the passkey that signed the root approves it. |
+| R1 | Each later commit of main carries an approval from a promoter in the policy of its first parent: the promoter's passkey signs the whole commit. The commit after the root sets the first policy, and the passkey that signed the root approves it. |
 | R2 | Only a commit of main with such an approval changes `.repo/`. A key that a commit adds has no say over that commit. |
 | R3 | Each other commit that main reaches carries a valid SSH signature from a key in the policy in force when it came in. |
 | R4 | An approval names this repository, the ref, the parents and the tree of its own commit. |
@@ -42,9 +42,9 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 | R8 | A release tag of a main commit carries approvals of that tag from as many distinct promoters as `releaseApprovals` asks (one when absent). |
 | M | A proposal merges into main with no conflicts (proposals only). |
 
-Each approval can also be read as a Gordian Envelope (the commit sheet shows its `ur:envelope`, and an elided form with the same digest that leaves out the authenticator data and signature); the encoder matches the reference `bc-envelope-cli` byte for byte.
+Each approval can also be read as a Gordian Envelope (the commit sheet shows its `ur:envelope`, and an elided form with the same digest that leaves out the authenticator data and signature); the encoder matches the reference `bc-envelope-cli` byte for byte. For a commit of main the assertion's challenge is the commit itself, so its Envelope is read together with that commit.
 
-An approval is a WebAuthn assertion. Its challenge is the SHA-256 digest of a payload that names the repository, the ref, the parents and the tree. It is stored in the commit message as a `Forge-Approval` trailer. Agent commits carry ordinary SSH signatures and the inception commit carries the passkey's, so `git verify-commit` also checks them with the generated `.repo/config/verification/allowed_commit_signers`, which lists a P-256 passkey as the OpenSSH security key (`sk-ecdsa-sha2-nistp256@openssh.com`) it signs with.
+A promoter approves a change of main by signing the commit itself: a WebAuthn assertion whose challenge is the commit's SSHSIG data, stored as the commit's SSH signature in OpenSSH's `webauthn-sk-ecdsa-sha2-nistp256@openssh.com` format. The commit message ends with a `Forge-Approval` trailer holding a payload that names the repository, the ref, the parents and the tree, which the signature covers. A release tag carries approvals in its message instead: WebAuthn assertions whose challenge is the SHA-256 digest of such a payload. Agent commits carry ordinary SSH signatures, so `git verify-commit` checks every commit of main and every agent commit with the generated `.repo/config/verification/allowed_commit_signers`, which lists a P-256 passkey as the OpenSSH security key (`sk-ecdsa-sha2-nistp256@openssh.com`) it signs with.
 
 ## Run it locally
 
@@ -115,7 +115,8 @@ When the deployment sets `MIRROR_OWNER` and the `GITHUB_TOKEN` secret, the page 
 - **The agents are scripted.** Their tasks are fixed so the demo runs the same way each time. They are forge objects, not library principals: the library's agent records and grants are future work.
 - **One promoter per project**, the creator's passkey. The policy format and the verifier take more (R8 checks releases that need several), and SSH promoter keys too; the page collects one approval per change.
 - **Agents are forge objects**, not passkey-library principals: grants in the library are future work, and device-limited identities need hardware attestation the library does not ask for.
-- **An approval binds the repository, ref, parents and tree, not the commit message or author fields.** The platform could reword a promotion's message without breaking its approval.
+- **The page trusts the forge for the challenge.** The sheet shows the change and its message, but the passkey signs the challenge the forge sends; the page does not yet rebuild the commit and check it. A forge that showed one change and sent another would get a valid signature on the other, and no verifier could tell afterwards. Rebuilding the commit in the page closes this.
+- **A release approval binds the repository, ref, commit and tree, not the tag message.** The platform could reword a release tag's message without breaking its approvals. A commit of main is signed as a whole, message and author included.
 - **R5 and R6 trust the committer time**, which the signer writes. Short key windows and revocation limit this.
 - **R0 trusts the first commit's own policy.** Pin the repository id (`--repo`) to know you have the right repository.
 - **Merge commits only.** A squash would drop the agents' signatures.

@@ -60,6 +60,7 @@ describe("the whole journey", () => {
     const promotion = must(await leo.forge.preparePromotion(id, ada.id));
     expect(promotion.payload.parents).toEqual([state.mainHead, ada.head]);
     expect(promotion.changes).toEqual([{ path: "CHANGELOG.md", change: "modified" }]);
+    expect(promotion.message).toContain(`Promote "Add a changelog entry" from Ada`);
     state = must(await leo.forge.approve(promotion));
     expect(state.proposals.find((p) => p.id === ada.id)?.status).toBe("promoted");
     const bo = state.proposals.find((p) => p.agentId === "bo" && p.taskId === "readme-es")!;
@@ -88,6 +89,13 @@ describe("the whole journey", () => {
     expect(policyCommit.approval?.payload).toMatchObject({ action: "incept", repo: state.repoId, parents: [state.repoId] });
     expect(policyCommit.changes.map((c) => c.path)).toContain(".repo/config/verification/policy.json");
     expect(policyCommit.message).not.toContain("Forge-Approval");
+    // A promotion is signed as a whole by the passkey: an SSH signature git checks, with its approval and Envelope.
+    const promoted = must(await leo.forge.commit(id, state.mainHead!));
+    expect(promoted.signature).toContain("BEGIN SSH SIGNATURE");
+    expect(promoted.approval?.payload).toMatchObject({ action: "promote", repo: state.repoId });
+    expect(promoted.approval?.envelope.full.ur).toMatch(/^ur:envelope\//);
+    expect(promoted.report?.rules.find((r) => r.rule === "R1")?.reason).toMatch(/^Signed as a whole by the passkey of promoter /);
+    expect(promoted.message).not.toContain("Forge-Approval");
     const rogueCommit = must(await leo.forge.commit(id, rogue.head));
     expect(rogueCommit.signature).toContain("BEGIN SSH SIGNATURE");
     expect(rogueCommit.approval).toBeNull();

@@ -10,9 +10,10 @@ This repository carries its own rules. \`.repo/config/verification/policy.json\`
 lists the keys it trusts:
 
 - **Promoters** may approve a change of \`main\` or of \`.repo/\`. A promoter key
-  is a passkey. Each approval is a WebAuthn assertion over one exact change:
-  this repository, the parents and the tree. It is in the commit message, in
-  the \`Forge-Approval\` trailer.
+  is a passkey. It approves a change by signing the commit itself, as an SSH
+  signature that git checks; the \`Forge-Approval\` trailer names this
+  repository and the ref, and the signature covers it. A release is approved
+  in its tag's message.
 - **Authors** may sign work in their own forks, each with a short-lived SSH key.
   An author key cannot approve, and cannot change \`.repo/\`.
 

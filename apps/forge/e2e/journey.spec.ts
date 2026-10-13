@@ -150,6 +150,13 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
     { env: utc },
   ).toString();
   expect(rootCheck.trim()).toBe(`G ${memberName}`);
+  // Every commit of main, the root and each change the passkey approved, is a signature stock git accepts.
+  const mainChecks = execFileSync(
+    "git",
+    ["-C", dir, "-c", "gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers", "log", "--first-parent", "--format=%G?"],
+    { env: utc },
+  ).toString().trim().split("\n");
+  expect(mainChecks).toEqual(["G", "G", "G", "G"]);
 });
 
 test("the story plays from a new project to the commands, stopping only for approvals", async ({ page }) => {

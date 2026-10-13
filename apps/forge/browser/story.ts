@@ -64,7 +64,7 @@ const STEPS: Step[] = [
     },
   },
   {
-    caption: "Promote Ada's change. Your passkey approves this exact merge: both parents and the resulting tree.",
+    caption: "Promote Ada's change. Your passkey signs this exact merge commit: both parents, the resulting tree and the message.",
     done: (s) => Boolean(s?.proposals.some((p) => p.agentId === "ada" && p.status === "promoted")),
     async run(a) {
       const ada = a.state()?.proposals.find((p) => p.agentId === "ada" && p.status === "ready");

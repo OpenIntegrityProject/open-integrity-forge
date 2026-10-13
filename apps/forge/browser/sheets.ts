@@ -175,12 +175,17 @@ export class ApprovalSheet {
         { class: "file-list" },
         request.changes.map((c) => h("li", { class: `file-${c.change}` }, h("span", { class: "file-change" }, c.change), " ", h("code", null, c.path))),
       ),
+      ...(request.message !== undefined
+        ? [h("h3", null, "Commit message"), h("pre", { class: "code", tabindex: 0, "aria-label": "The commit message" }, request.message.trimEnd())]
+        : []),
       h(
         "p",
         { class: "muted small" },
         root
           ? "Your passkey signs this exact commit as an SSH signature, so git verify-commit checks it on any clone, with no forge."
-          : "Your passkey signs a digest of exactly these facts. The signature goes into the commit, so anyone with a clone can check it without this site.",
+          : request.message !== undefined
+            ? "Your passkey signs this exact commit, its message included, as an SSH signature, so git verify-commit checks it on any clone, with no forge."
+            : "Your passkey signs a digest of exactly these facts. The signature goes into the commit, so anyone with a clone can check it without this site.",
       ),
     ];
   }
@@ -191,7 +196,9 @@ export class ApprovalSheet {
     stamp.classList.add("stamp");
     if (!reducedMotion()) stamp.classList.add("stamp-press");
     const root = request.payload.action === "incept" && request.payload.parents.length === 0;
-    const raw = h("details", { class: "raw" }, h("summary", null, root ? "Show the signature as the commit stores it" : "Show the approval as the commit stores it"), h("p", { class: "muted" }, "Loading…"));
+    // The passkey signed the commit itself: the inception commit, and each change of main.
+    const signedCommit = root || request.message !== undefined;
+    const raw = h("details", { class: "raw" }, h("summary", null, signedCommit ? "Show the signature as the commit stores it" : "Show the approval as the commit stores it"), h("p", { class: "muted" }, "Loading…"));
     const done = h("button", { class: "primary", type: "button", value: "done", "data-autofocus": true }, "Done");
     this.show(
       "signed",
@@ -200,7 +207,7 @@ export class ApprovalSheet {
       h("div", { class: "sheet-actions" }, done),
     );
     void this.forge.commit(state.id, head).then((detail) => {
-      if (detail.result === "ok" && !detail.value.approval && detail.value.signature) {
+      if (detail.result === "ok" && signedCommit && detail.value.signature) {
         raw.replaceChildren(raw.firstChild!, h("pre", { class: "code", tabindex: 0 }, detail.value.signature));
         return;
       }

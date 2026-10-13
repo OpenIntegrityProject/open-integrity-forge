@@ -32,7 +32,9 @@ export interface ApprovalRequest {
   approvalId: string;
   projectId: string;
   payload: ApprovalPayload;
-  /** The request options for `usePasskey`. The challenge is the SHA-256 digest of the payload bytes. */
+  /** The commit message, for a change of main: the passkey signs the whole commit, this message included. */
+  message?: string;
+  /** The request options for `usePasskey`. The challenge is the SSHSIG data of the commit for a change of main, else the SHA-256 digest of the payload bytes. */
   options: {
     challenge: string;
     rpId: string;

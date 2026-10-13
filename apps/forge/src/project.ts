@@ -10,6 +10,7 @@ import {
   type ApprovalPayload,
 } from "../authority/approval.ts";
 import { fromBase64Url, fromUtf8, toBase64Url } from "../authority/bytes.ts";
+import { factsIn } from "../authority/approval.ts";
 import {
   changeFiles,
   diffTrees,
@@ -25,12 +26,12 @@ import {
   type Change,
   type Identity,
 } from "../authority/git.ts";
-import { approvalPayload, commitApproved, commitInception, inceptionPayload, tagApproved, withAuthors, type InceptionInput } from "../authority/make.ts";
+import { approvalPayload, commitInception, commitPasskeySigned, inceptionPayload, passkeyCommitPayload, tagApproved, withAuthors, type InceptionInput } from "../authority/make.ts";
 import { parsePolicy, POLICY_PATH, withRevoked, type Author, type Policy, type WebAuthnPromoter } from "../authority/policy.ts";
 import { diffLines, type FileDiff } from "../authority/diff.ts";
 import { approvalEnvelopes } from "../authority/envelope.ts";
-import { EMPTY_TREE, verifyHistory, verifyProposal, type HistoryReport, type ProposalReport, type CommitReport } from "../authority/verify.ts";
-import { blobFingerprint, skPublicKeyBlob, sshChallenge, webauthnSignature } from "../authority/webauthn-sshsig.ts";
+import { EMPTY_TREE, passkeyApproval, verifyHistory, verifyProposal, type HistoryReport, type ProposalReport, type CommitReport } from "../authority/verify.ts";
+import { blobFingerprint, skPublicKeyBlob, sshChallenge, webauthnAssertion, webauthnSignature } from "../authority/webauthn-sshsig.ts";
 import type { AgentIdentity } from "./agent-run.ts";
 import { repoHost, type MemRepo, type RepoHost, type Transport } from "./repo-host.ts";
 import type {
@@ -149,6 +150,17 @@ function promoterEntry(key: PromoterKey): WebAuthnPromoter {
     ...(key.label ? { label: key.label } : {}),
     since: new Date(key.capturedAt).toISOString(),
   };
+}
+
+/** A change of main as the passkey signed it: the payload and message of the commit, and the browser's assertion. */
+interface Signed {
+  payload: ApprovalPayload;
+  message: string;
+  response: { response: { authenticatorData: string; clientDataJSON: string; signature: string } };
+}
+
+function admitMessage(names: string): string {
+  return `Admit author keys for ${names}\n\nEach key may sign work in its own fork until its window ends.\nIt may not approve, and it may not change .repo/.\n`;
 }
 
 function assertionShape(value: unknown): value is { id: string; response: { authenticatorData: string; clientDataJSON: string; signature: string } } {
@@ -324,9 +336,14 @@ export class Project extends DurableObject<Env> {
       Date.now(),
     );
     const options = await approvalRequestOptions(bytes, promoters[0]!, project.rp.rpId);
+    // A change of main is a commit the passkey signs as a whole: the challenge is that commit's SSHSIG data.
+    const message = (data as { message?: string }).message;
     if (challenge) options.challenge = challenge;
+    else if (message !== undefined) {
+      options.challenge = await sshChallenge(await passkeyCommitPayload({ payload, message, committer: this.promoterIdentity(payload.at) }));
+    }
     options.allowCredentials = promoters.map((p) => ({ id: p.credentialId, type: "public-key" as const }));
-    return { approvalId: id, projectId: project.id, payload, options, changes, summary: payload.summary };
+    return { approvalId: id, projectId: project.id, payload, options, changes, summary: payload.summary, ...(message !== undefined ? { message } : {}) };
   }
 
   /** The empty inception commit of a project: its author is the promoter, its committer the passkey's SSH fingerprint. */
@@ -384,7 +401,7 @@ export class Project extends DurableObject<Env> {
     const changes = Object.keys(files)
       .sort()
       .map((path): Change => ({ path, change: "added" }));
-    return { ok: true, value: await this.request("incept", payload, policy.promoters as WebAuthnPromoter[], { policy }, changes) };
+    return { ok: true, value: await this.request("incept", payload, policy.promoters as WebAuthnPromoter[], { policy, message: inceptionMessage(project.name) }, changes) };
   }
 
   /** Request an approval that admits author keys for new agents. */
@@ -442,7 +459,7 @@ export class Project extends DurableObject<Env> {
     const promoters = policy.promoters.filter((p): p is WebAuthnPromoter => p.kind === "webauthn");
     return {
       ok: true,
-      value: await this.request("admit", payload, promoters, { policy: next, agents }, await diffTrees(ws.repo, mainTree, tree)),
+      value: await this.request("admit", payload, promoters, { policy: next, agents, message: admitMessage(names.join(" and ")) }, await diffTrees(ws.repo, mainTree, tree)),
     };
   }
 
@@ -488,7 +505,7 @@ export class Project extends DurableObject<Env> {
     });
     const promoters = policy.promoters.filter((p): p is WebAuthnPromoter => p.kind === "webauthn");
     const agents = [{ id, name: `${project.promoter.id}'s laptop`, fork: `${project.repoName}-${id}`.slice(0, 63), person: true }];
-    return { ok: true, value: await this.request("admit", payload, promoters, { policy: next, agents }, await diffTrees(ws.repo, mainTree, tree)) };
+    return { ok: true, value: await this.request("admit", payload, promoters, { policy: next, agents, message: admitMessage("a person's laptop") }, await diffTrees(ws.repo, mainTree, tree)) };
   }
 
   /** A write token for a person's fork, and the git commands that sign a commit and push it there. */
@@ -543,7 +560,13 @@ export class Project extends DurableObject<Env> {
     const promoters = policy.promoters.filter((p): p is WebAuthnPromoter => p.kind === "webauthn");
     return {
       ok: true,
-      value: await this.request("revoke", payload, promoters, { policy: next, agentId }, await diffTrees(ws.repo, mainTree, tree)),
+      value: await this.request(
+        "revoke",
+        payload,
+        promoters,
+        { policy: next, agentId, message: `Revoke the key of ${agent.name}\n\nThe key signs nothing after ${next.authors.find((a) => a.id === agentId)?.revokedAt}.\nCommits it signed before then still verify.\n` },
+        await diffTrees(ws.repo, mainTree, tree),
+      ),
     };
   }
 
@@ -599,7 +622,16 @@ export class Project extends DurableObject<Env> {
     const mainTree = (await readCommit(ws.repo, ws.main)).tree;
     return {
       ok: true,
-      value: await this.request("promote", payload, promoters, { proposalId }, await diffTrees(ws.repo, mainTree, report.mergedTree)),
+      value: await this.request(
+        "promote",
+        payload,
+        promoters,
+        {
+          proposalId,
+          message: `Promote "${proposal.title}" from ${agent?.name ?? proposal.agent_id}\n\nMerges ${proposal.branch} (${head.slice(0, 7)}) from fork ${agent?.fork ?? "?"}.\nSigned by author key ${agent?.fingerprint ?? "?"}.\n`,
+        },
+        await diffTrees(ws.repo, mainTree, report.mergedTree),
+      ),
     };
   }
 
@@ -633,15 +665,16 @@ export class Project extends DurableObject<Env> {
         return { ok: true, value: await this.state() };
       }
       const bytes = fromBase64Url(row.payload);
-      const approval = approvalFrom(bytes, response);
       const payload = JSON.parse(new TextDecoder().decode(bytes)) as ApprovalPayload;
       const data = JSON.parse(row.data);
+      // A change of main: the passkey signed the commit itself. A release: an approval for the tag's message.
+      const signed: Signed = { payload, message: data.message as string, response };
       try {
-        if (row.kind === "incept") await this.incept(project, payload, approval, data.policy as Policy);
-        else if (row.kind === "admit") await this.admit(project, payload, approval, data);
-        else if (row.kind === "revoke") await this.revoke(project, payload, approval, data);
-        else if (row.kind === "release") await this.release(project, payload, approval, data.name as string);
-        else await this.promote(project, payload, approval, data.proposalId as string);
+        if (row.kind === "incept") await this.incept(project, signed, data.policy as Policy);
+        else if (row.kind === "admit") await this.admit(project, signed, data);
+        else if (row.kind === "revoke") await this.revoke(project, signed, data);
+        else if (row.kind === "release") await this.release(project, payload, approvalFrom(bytes, response), data.name as string);
+        else await this.promote(project, signed, data.proposalId as string);
       } catch (error) {
         if (error instanceof Refused) {
           this.event("refusal", error.reason);
@@ -651,6 +684,24 @@ export class Project extends DurableObject<Env> {
       }
       return { ok: true, value: await this.state() };
     });
+  }
+
+  /**
+   * Write the commit of main the passkey signed: the same payload, message and
+   * time it was asked to sign, with its signature. Refuses unless the signature
+   * verifies as a promoter's under `policy`. It does not move a ref.
+   */
+  private async commitMain(repo: MemRepo, signed: Signed, policy: Policy): Promise<{ oid: string; by: string }> {
+    const project = this.project()!;
+    const blob = skPublicKeyBlob(project.promoter.publicKey, project.rp.rpId);
+    const oid = await commitPasskeySigned(
+      repo,
+      { payload: signed.payload, message: signed.message, committer: this.promoterIdentity(signed.payload.at) },
+      async () => webauthnSignature(blob, signed.response.response),
+    );
+    const check = await passkeyApproval(await readCommit(repo, oid), policy);
+    if (!check.ok) throw new Refused(403, "approval-refused", `The approval does not verify: ${check.reason}`);
+    return { oid, by: check.promoter.id };
   }
 
   private async check(approval: Approval, policy: Policy): Promise<string> {
@@ -680,19 +731,14 @@ export class Project extends DurableObject<Env> {
   }
 
   /** Write the commit that sets the first policy, on top of the inception commit. */
-  private async incept(project: ProjectRow, payload: ApprovalPayload, approval: Approval, policy: Policy) {
+  private async incept(project: ProjectRow, signed: Signed, policy: Policy) {
+    const { payload } = signed;
     if (!project.repoId || project.mainHead !== project.repoId) throw new Refused(409, "exists", "This project already has its first policy.");
-    const by = await this.check(approval, policy);
     const ws = await this.workspace("write");
     if (payload.parents[0] !== ws.main || ws.main !== project.repoId) throw new Refused(409, "stale", "Main moved since this change was shown. Ask again.");
     const tree = await writeFiles(ws.repo, templateFiles(project.name, policy, await verifier(this.env), project.repoName));
     if (tree !== payload.tree) throw new Refused(409, "changed", "The template changed since the approval was asked for.");
-    const oid = await commitApproved(ws.repo, {
-      payload,
-      approval,
-      message: inceptionMessage(project.name),
-      committer: this.promoterIdentity(Date.now()),
-    });
+    const { oid, by } = await this.commitMain(ws.repo, signed, policy);
     await setRef(ws.repo, "refs/heads/main", oid);
     await ws.transport.push(ws.repo, "refs/heads/main", "refs/heads/main", ws.main);
     this.saveProject({ ...project, mainHead: oid });
@@ -703,22 +749,16 @@ export class Project extends DurableObject<Env> {
 
   private async admit(
     project: ProjectRow,
-    payload: ApprovalPayload,
-    approval: Approval,
+    signed: Signed,
     data: { policy: Policy; agents: { id: string; name: string; fork: string; person?: boolean }[] },
   ) {
+    const { payload } = signed;
     const ws = await this.workspace("write");
     if (payload.parents[0] !== ws.main) throw new Refused(409, "stale", "Main moved since this change was shown. Ask again.");
-    const by = await this.check(approval, await this.policyAt(ws.repo, ws.main));
     const tree = await changeFiles(ws.repo, (await readCommit(ws.repo, ws.main)).tree, policyFiles(data.policy));
     if (tree !== payload.tree) throw new Refused(409, "changed", "The policy change differs from the approved one.");
     const names = data.agents.map((a) => (a.person ? "a person's laptop" : a.name)).join(" and ");
-    const oid = await commitApproved(ws.repo, {
-      payload,
-      approval,
-      message: `Admit author keys for ${names}\n\nEach key may sign work in its own fork until its window ends.\nIt may not approve, and it may not change .repo/.\n`,
-      committer: this.promoterIdentity(Date.now()),
-    });
+    const { oid, by } = await this.commitMain(ws.repo, signed, await this.policyAt(ws.repo, ws.main));
     await setRef(ws.repo, "refs/heads/main", oid);
     await ws.transport.push(ws.repo, "refs/heads/main", "refs/heads/main", ws.main);
     this.saveProject({ ...project, mainHead: oid });
@@ -773,19 +813,14 @@ export class Project extends DurableObject<Env> {
     await this.recordHistory(ws.repo, ws.main);
   }
 
-  private async revoke(project: ProjectRow, payload: ApprovalPayload, approval: Approval, data: { policy: Policy; agentId: string }) {
+  private async revoke(project: ProjectRow, signed: Signed, data: { policy: Policy; agentId: string }) {
+    const { payload } = signed;
     const ws = await this.workspace("write");
     if (payload.parents[0] !== ws.main) throw new Refused(409, "stale", "Main moved since this change was shown. Ask again.");
-    const by = await this.check(approval, await this.policyAt(ws.repo, ws.main));
     const tree = await changeFiles(ws.repo, (await readCommit(ws.repo, ws.main)).tree, policyFiles(data.policy));
     if (tree !== payload.tree) throw new Refused(409, "changed", "The policy change differs from the approved one.");
     const agent = this.agents().find((a) => a.id === data.agentId)!;
-    const oid = await commitApproved(ws.repo, {
-      payload,
-      approval,
-      message: `Revoke the key of ${agent.name}\n\nThe key signs nothing after ${data.policy.authors.find((a) => a.id === agent.id)?.revokedAt}.\nCommits it signed before then still verify.\n`,
-      committer: this.promoterIdentity(Date.now()),
-    });
+    const { oid, by } = await this.commitMain(ws.repo, signed, await this.policyAt(ws.repo, ws.main));
     await setRef(ws.repo, "refs/heads/main", oid);
     await ws.transport.push(ws.repo, "refs/heads/main", "refs/heads/main", ws.main);
     this.saveProject({ ...project, mainHead: oid });
@@ -803,12 +838,12 @@ export class Project extends DurableObject<Env> {
     }
   }
 
-  private async promote(project: ProjectRow, payload: ApprovalPayload, approval: Approval, proposalId: string) {
+  private async promote(project: ProjectRow, signed: Signed, proposalId: string) {
+    const { payload } = signed;
     const proposal = this.proposal(proposalId);
     if (!proposal) throw new Refused(404, "no-proposal", "There is no such proposal.");
     const ws = await this.workspace("write");
     if (payload.parents[0] !== ws.main) throw new Refused(409, "stale", "Main moved since this change was shown. Ask again.");
-    const by = await this.check(approval, await this.policyAt(ws.repo, ws.main));
     const head = await this.fetchProposal(ws, proposal);
     if (payload.parents[1] !== head) throw new Refused(409, "changed", "The proposal moved since it was approved.");
     const report = await verifyProposal(ws.repo, ws.main, head);
@@ -816,13 +851,7 @@ export class Project extends DurableObject<Env> {
       await this.saveReport(ws.repo, proposal, ws.main, report);
       throw new Refused(409, "rejected", report.ok ? "The merge differs from the approved tree." : report.summary);
     }
-    const agent = this.agents().find((a) => a.id === proposal.agent_id);
-    const oid = await commitApproved(ws.repo, {
-      payload,
-      approval,
-      message: `Promote "${proposal.title}" from ${agent?.name ?? proposal.agent_id}\n\nMerges ${proposal.branch} (${head.slice(0, 7)}) from fork ${agent?.fork ?? "?"}.\nSigned by author key ${agent?.fingerprint ?? "?"}.\n`,
-      committer: this.promoterIdentity(Date.now()),
-    });
+    const { oid, by } = await this.commitMain(ws.repo, signed, await this.policyAt(ws.repo, ws.main));
     await setRef(ws.repo, "refs/heads/main", oid);
     await ws.transport.push(ws.repo, "refs/heads/main", "refs/heads/main", ws.main);
     this.saveProject({ ...project, mainHead: oid });
@@ -884,7 +913,11 @@ export class Project extends DurableObject<Env> {
       break;
     }
     if (!found) return refuse(404, "no-commit", "There is no such commit.");
-    const approval = approvalIn(found.message);
+    let approval = approvalIn(found.message);
+    // A commit the passkey signed as a whole: its approval is the trailer's payload with the signature's assertion.
+    const facts = approval ? null : factsIn(found.message);
+    const assertion = facts && found.signature ? await webauthnAssertion(found.signature) : null;
+    if (facts && assertion) approval = { payload: facts.bytes, credentialId: this.project()!.promoter.credentialId, ...assertion };
     const parent = found.parents[0] ? (await readCommit(ws.repo, found.parents[0])).tree : null;
     let clientData: unknown = null;
     let payload: ApprovalPayload | null = null;
