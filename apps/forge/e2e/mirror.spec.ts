@@ -67,7 +67,8 @@ test("a promoted history mirrors to GitHub, where the pinned verifier passes it 
   await page.getByRole("button", { name: "Continue", exact: true }).click();
 
   await page.getByRole("button", { name: "Create with passkey" }).click();
-  await approve(page);
+  await approve(page); // the inception commit
+  await approve(page); // the first policy
   await page.getByRole("button", { name: "Admit Ada and Bo" }).click();
   await approve(page);
   await expect(page.locator(".proposal-ready")).toHaveCount(2, { timeout: 60_000 });
@@ -87,7 +88,7 @@ test("a promoted history mirrors to GitHub, where the pinned verifier passes it 
   const clone = cloneOf(bare);
   execFileSync("actionlint", [join(clone, ".github/workflows/verify.yml")]);
   const green = runWorkflow(clone);
-  expect(green.output).toContain("✓ All 4 commits verify");
+  expect(green.output).toContain("✓ All 5 commits verify");
   expect(green.status).toBe(0);
 
   // Someone with push access to the mirror adds a commit by hand.

@@ -42,7 +42,7 @@ async function approve(page: Page, title: string) {
   const sheet = page.locator("#approval");
   await expect(sheet.getByRole("heading", { level: 2 })).toHaveText(title, { timeout: 30_000 });
   await sheet.getByRole("button", { name: "Approve with passkey" }).click();
-  await expect(sheet.getByRole("heading", { name: "Approved" })).toBeVisible({ timeout: 30_000 });
+  await expect(sheet.getByRole("heading", { name: title === "Sign the inception commit" ? "Signed" : "Approved" })).toBeVisible({ timeout: 30_000 });
   await sheet.getByRole("button", { name: "Done" }).click();
   await expect(sheet).toBeHidden();
 }
@@ -76,13 +76,15 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
   const memberName = await register(page);
   await expect(page.locator("#promoter-badge")).toHaveText(/Promoter key [a-z]{4}-[a-z]{4}-[a-z]{4}/);
 
-  // The inception commit: the sheet shows the root before the passkey is asked.
+  // The inception commit: the passkey signs an empty root, then approves the first policy.
   await page.getByRole("button", { name: "Create with passkey" }).click();
   await expect(page.locator("#approval")).toContainText("None: this is the root of trust");
-  await expect(page.locator("#approval")).toContainText(`Create gordian-notes with ${memberName} as its only promoter`);
-  await approve(page, "Approve the first commit");
+  await expect(page.locator("#approval")).toContainText("Sign the inception commit of gordian-notes");
+  await approve(page, "Sign the inception commit");
+  await expect(page.locator("#approval")).toContainText(`Set the first policy of gordian-notes, with ${memberName} as its only promoter`);
+  await approve(page, "Approve the first policy");
   await expect(page.locator("#repo-meta")).toContainText(/Repository id [0-9a-f]{7}/);
-  await expect(page.locator(".graph .node")).toHaveCount(1);
+  await expect(page.locator(".graph .node")).toHaveCount(2);
 
   // Two agents, two forks, two signed proposals.
   await page.getByRole("button", { name: "Admit Ada and Bo" }).click();
@@ -107,12 +109,15 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
   // The graph is reachable from the keyboard, and a mark opens its commit.
   await page.locator(".graph .node").first().focus();
   await page.keyboard.press("Enter");
+  await expect(page.locator("#commit")).toContainText("Root of trust", { timeout: 30_000 });
+  await expect(page.locator("#commit")).toContainText("Signed by a passkey, as an SSH signature");
+  await page.locator("#commit-close").click();
+  await page.locator(".graph .node").nth(1).click();
   await expect(page.locator("#commit")).toContainText("Approved by a passkey", { timeout: 30_000 });
-  await expect(page.locator("#commit")).toContainText("Root of trust");
   await page.locator("#commit-close").click();
 
   await page.getByRole("button", { name: "Verify from a fresh clone" }).click();
-  await expect(page.locator(".fresh")).toContainText("All 4 commits verify", { timeout: 30_000 });
+  await expect(page.locator(".fresh")).toContainText("All 5 commits verify", { timeout: 30_000 });
 
   // Outside the forge: git clones over HTTP with a read token, and two other programs check the clone.
   await page.getByRole("button", { name: "Show the commands" }).click();
@@ -128,13 +133,23 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
   const repoId = /--repo ([0-9a-f]{40})/.exec(commands[2]!)![1]!;
   const verified = execFileSync("sh", ["-c", commands[2]!], { cwd: work }).toString();
   expect(verified).toContain(`Repository id: ${repoId}`);
-  expect(verified).toMatch(/✓ All 4 commits verify/);
+  expect(verified).toMatch(/✓ All 5 commits verify/);
+  // In UTC: during daylight saving time, git on macOS hands ssh-keygen a verify time an hour late, so a key
+  // that expires within the hour reads as expired.
+  const utc = { ...process.env, TZ: "UTC" };
   const log = execFileSync(
     "git",
     ["-C", dir, "-c", "gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers", "log", "--show-signature", "--format=%h %s"],
-    { stdio: ["ignore", "pipe", "pipe"] },
+    { stdio: ["ignore", "pipe", "pipe"], env: utc },
   ).toString();
   expect(log).toContain('Good "git" signature for ada');
+  // Stock git checks the inception commit, the passkey's own SSH signature, with the repository's allowed signers.
+  const rootCheck = execFileSync(
+    "git",
+    ["-C", dir, "-c", "gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers", "log", "-1", "--format=%G? %GS", repoId],
+    { env: utc },
+  ).toString();
+  expect(rootCheck.trim()).toBe(`G ${memberName}`);
 });
 
 test("the story plays from a new project to the commands, stopping only for approvals", async ({ page }) => {
@@ -145,7 +160,8 @@ test("the story plays from a new project to the commands, stopping only for appr
   const started = Date.now();
   await page.getByRole("button", { name: "Play the story" }).click();
   const story = page.locator("#story");
-  await approve(page, "Approve the first commit");
+  await approve(page, "Sign the inception commit");
+  await approve(page, "Approve the first policy");
   await expect(story).toContainText("Step 2 of 9", { timeout: 30_000 });
   await approve(page, "Approve the new rules");
   await expect(story).toContainText("a key can never authorize itself", { timeout: 90_000 });

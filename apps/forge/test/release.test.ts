@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { must, Person, testForge, uniqueName } from "./harness.ts";
+import { must, Person, testForge, uniqueName, createProject } from "./harness.ts";
 
 describe("a release", () => {
   it("is an annotated tag of main with a passkey approval, and a fresh clone verifies it", async () => {
     const app = testForge();
     const leo = new Person(app);
     await leo.register(uniqueName("Leo"));
-    const created = must(await leo.forge.approve(must(await leo.forge.prepareProject("release"))));
+    const created = must(await createProject(leo, "release"));
     const id = created.id;
     expect(await leo.forge.prepareRelease(id, "../bad")).toMatchObject({ result: "refused", status: 400 });
 

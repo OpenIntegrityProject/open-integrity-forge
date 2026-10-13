@@ -39,7 +39,8 @@ const publicKey = readFileSync(join(work, "key.pub"), "utf8").trim();
 
 const { forge, register, waitFor } = session(origin, true);
 await register(`Laptop${Date.now().toString(36)}`);
-const id = must(await forge.approve(must(await forge.prepareProject("laptop-check"), "prepare")), "approve").id;
+const signed = must(await forge.approve(must(await forge.prepareProject("laptop-check"), "prepare")), "sign inception");
+const id = must(await forge.approve(must(await forge.prepareInception(signed.id), "prepare first policy")), "approve first policy").id;
 let state = must(await forge.approve(must(await forge.preparePerson(id, publicKey), "prepare laptop key")), "approve laptop key");
 const person = state.agents.find((a) => a.kind === "person")!;
 step(`admitted ${person.fingerprint} as ${person.id}, fork ${person.fork}`);

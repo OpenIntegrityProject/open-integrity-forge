@@ -4,11 +4,11 @@ A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudf
 
 It asks the question from Tempo's [Human authorization in agentic workflows](https://tempo.xyz/developers/blog/human-authorization-in-agentic-workflows): did an authorized human intend this specific action? Tempo keeps the answer on its server. Here the answer is a signed object in Git, checked against a signer policy committed in the repository and rooted in its first commit.
 
-The forge is built on this repository's passkey library and reuses the demo's sign-in as is. It changes neither.
+The forge is built on this repository's passkey library and reuses the demo's sign-in as is. The library offers ES256 before EdDSA, because only a P-256 passkey can make the SSH signature that Git checks.
 
 ## What it shows
 
-1. **Your passkey approves the first commit.** Its hash becomes the repository's id. Its policy names your passkey as the only promoter.
+1. **Your passkey signs the first commit.** It is an empty Open Integrity inception commit whose committer is your passkey's SSH key fingerprint, signed as an SSH signature that `git verify-commit` checks. Its hash becomes the repository's id. The next commit, which your passkey also approves, sets the policy and names your passkey as the only promoter.
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. The new rules need your approval too.
 3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. The forge checks every proposal against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.
@@ -31,8 +31,8 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 
 | Rule | Statement |
 | --- | --- |
-| R0 | The first commit of main is the root of trust. Its approval verifies against the promoter key in its own policy. Its hash is the repository id. |
-| R1 | Each later commit of main carries an approval from a promoter in the policy of its first parent. |
+| R0 | The first commit of main is the root of trust, and its hash is the repository id. It is an empty commit whose committer is the fingerprint of the passkey that signed it, as an SSH signature. |
+| R1 | Each later commit of main carries an approval from a promoter in the policy of its first parent. The commit after the root sets the first policy, and the passkey that signed the root approves it. |
 | R2 | Only a commit of main with such an approval changes `.repo/`. A key that a commit adds has no say over that commit. |
 | R3 | Each other commit that main reaches carries a valid SSH signature from a key in the policy in force when it came in. |
 | R4 | An approval names this repository, the ref, the parents and the tree of its own commit. |
@@ -44,7 +44,7 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 
 Each approval can also be read as a Gordian Envelope (the commit sheet shows its `ur:envelope`, and an elided form with the same digest that leaves out the authenticator data and signature); the encoder matches the reference `bc-envelope-cli` byte for byte.
 
-An approval is a WebAuthn assertion. Its challenge is the SHA-256 digest of a payload that names the repository, the ref, the parents and the tree. It is stored in the commit message as a `Forge-Approval` trailer. Agent commits carry ordinary SSH signatures, so `git verify-commit` also checks them with the generated `.repo/config/verification/allowed_commit_signers`.
+An approval is a WebAuthn assertion. Its challenge is the SHA-256 digest of a payload that names the repository, the ref, the parents and the tree. It is stored in the commit message as a `Forge-Approval` trailer. Agent commits carry ordinary SSH signatures and the inception commit carries the passkey's, so `git verify-commit` also checks them with the generated `.repo/config/verification/allowed_commit_signers`, which lists a P-256 passkey as the OpenSSH security key (`sk-ecdsa-sha2-nistp256@openssh.com`) it signs with.
 
 ## Run it locally
 
@@ -88,10 +88,10 @@ shasum -a 256 forge-verify.mjs                                # must match
 node forge-verify.mjs notes --repo <the id of the first commit>
 ```
 
-It prints each commit with its rules, and exits 0 when all of them pass, 1 when one fails. `--json` prints the full report. To use the source instead of the file, run `node apps/forge/scripts/forge-verify.ts` from this repository. Git alone checks the agents' signatures:
+It prints each commit with its rules, and exits 0 when all of them pass, 1 when one fails. `--json` prints the full report. To use the source instead of the file, run `node apps/forge/scripts/forge-verify.ts` from this repository. Git alone checks the inception commit and the agents' signatures (in UTC, since under daylight saving time git on macOS checks a key's window an hour late):
 
 ```sh
-git -C notes -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
+TZ=UTC git -C notes -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
 ```
 
 ## The GitHub mirror

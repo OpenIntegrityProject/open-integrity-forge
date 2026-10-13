@@ -132,7 +132,7 @@ export class Stage {
     const field = h("input", { id: "release-name", value: releaseName, size: 8, "aria-label": "Release name", autocomplete: "off" });
     fill(
       byId("release-form"),
-      state.repoId
+      state.policy
         ? [
             h("label", { for: "release-name", class: "small" }, "Release main as"),
             field,
@@ -142,7 +142,12 @@ export class Stage {
     );
     fill(byId("graph"), 
       state.repoId
-        ? this.graph.render(state)
+        ? [
+            this.graph.render(state),
+            ...(state.policy
+              ? []
+              : [h("button", { class: "primary seal-button", type: "button", "data-action": "incept", "data-key": "incept", "data-passkey": "on", disabled: this.busy() }, "Approve the first policy")]),
+          ]
         : h(
             "div",
             { class: "empty" },
@@ -154,7 +159,7 @@ export class Stage {
 
   private rules(state: ProjectState) {
     const policy = state.policy;
-    const policyCommit = [...(state.history?.commits ?? [])].reverse().find((c) => c.action === "policy" || c.role === "inception");
+    const policyCommit = [...(state.history?.commits ?? [])].reverse().find((c) => c.action === "policy" || c.action === "incept");
     fill(byId("rules-body"), 
       ...(policy
         ? [

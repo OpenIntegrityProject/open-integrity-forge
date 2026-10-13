@@ -26,7 +26,7 @@ const LEFT = 108;
 const TOP = 40;
 
 const KIND_WORD: Record<Kind, string> = {
-  inception: "Inception commit, approved by passkey",
+  inception: "Inception commit, signed by passkey",
   approved: "Commit on main, approved by passkey",
   author: "Signed commit",
   rejected: "Rejected commit",

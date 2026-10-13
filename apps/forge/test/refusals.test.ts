@@ -1,11 +1,11 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { must, Person, testForge, uniqueName, waitFor } from "./harness.ts";
+import { must, Person, testForge, uniqueName, waitFor, createProject } from "./harness.ts";
 
 async function project(app = testForge()) {
   const leo = new Person(app);
   await leo.register(uniqueName("Leo"));
-  const state = must(await leo.forge.approve(must(await leo.forge.prepareProject("refusals"))));
+  const state = must(await createProject(leo, "refusals"));
   return { app, leo, id: state.id, state };
 }
 

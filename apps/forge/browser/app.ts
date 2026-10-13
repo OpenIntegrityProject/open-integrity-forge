@@ -276,18 +276,25 @@ async function createProject(name: string): Promise<boolean> {
   me = await forge.me();
   if (projectId) open(projectId);
   if (state) received(state);
+  // The inception commit is signed; the second step sets the first policy.
+  if (state && !state.policy) return incept();
   return Boolean(state);
 }
 
 /** The project the page shows: the one the address names, even while its state is on its way. */
 const shownId = () => current?.id ?? projectIdFromHash();
 
+/** The inception, in two passkey steps: sign the empty inception commit, then approve the first policy. */
 async function incept(): Promise<boolean> {
   const id = shownId();
   if (!id) return false;
-  const state = await approvals.run(() => forge.prepareInception(id));
-  if (state) received(state);
-  return Boolean(state);
+  for (let step = 0; step < 2; step++) {
+    const state = await approvals.run(() => forge.prepareInception(id));
+    if (!state) return false;
+    received(state);
+    if (state.policy) return true;
+  }
+  return false;
 }
 
 async function admit(): Promise<boolean> {

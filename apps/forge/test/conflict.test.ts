@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { must, Person, testForge, uniqueName, waitFor } from "./harness.ts";
+import { must, Person, testForge, uniqueName, waitFor, createProject } from "./harness.ts";
 
 describe("a conflict", () => {
   it("rejects the second of two edits to the same line, and a redo on the new main merges", async () => {
     const app = testForge();
     const leo = new Person(app);
     await leo.register(uniqueName("Leo"));
-    const created = must(await leo.forge.approve(must(await leo.forge.prepareProject("conflict"))));
+    const created = must(await createProject(leo, "conflict"));
     expect(created.policy?.mergesOnly).toBe(true);
     const id = created.id;
     must(await leo.forge.approve(must(await leo.forge.prepareAgents(id, ["Ada", "Bo"]))));

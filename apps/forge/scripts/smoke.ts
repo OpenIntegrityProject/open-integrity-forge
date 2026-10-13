@@ -33,9 +33,10 @@ async function run(n: number): Promise<{ step: string; ms: number }[]> {
     return value;
   };
   await timed("register", () => register(`Smoke${Date.now().toString(36)}${n}`));
-  const project = await timed("inception (prepare and approve)", async () =>
-    must(await forge.approve(must(await forge.prepareProject(`smoke-${n}`), "prepare project")), "approve inception"),
-  );
+  const project = await timed("inception (sign the root, approve the first policy)", async () => {
+    const signed = must(await forge.approve(must(await forge.prepareProject(`smoke-${n}`), "prepare project")), "sign inception");
+    return must(await forge.approve(must(await forge.prepareInception(signed.id), "prepare first policy")), "approve first policy");
+  });
   const id = project.id;
   await timed("admit Ada and Bo", async () => must(await forge.approve(must(await forge.prepareAgents(id, ["Ada", "Bo"]), "prepare agents")), "approve agents"));
   let state = await timed("agents propose, both ready", () => waitFor(id, (s) => s.proposals.filter((p) => p.status === "ready").length === 2, "two ready proposals"));

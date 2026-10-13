@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { must, Person, testForge, uniqueName, waitFor } from "./harness.ts";
+import { must, Person, testForge, uniqueName, waitFor, createProject } from "./harness.ts";
 
 describe("revoking an agent's key", () => {
   it("is a policy change under a passkey approval; the agent stops, and its earlier work still verifies", async () => {
     const app = testForge();
     const leo = new Person(app);
     await leo.register(uniqueName("Leo"));
-    const id = must(await leo.forge.approve(must(await leo.forge.prepareProject("revocation")))).id;
+    const id = must(await createProject(leo, "revocation")).id;
     must(await leo.forge.approve(must(await leo.forge.prepareAgents(id, ["Ada", "Bo"]))));
     await waitFor(leo, id, (s) => s.proposals.filter((p) => p.status === "ready").length === 2, "two proposals");
 

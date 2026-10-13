@@ -145,6 +145,9 @@ export class ApprovalSheet {
 
   private review(request: ApprovalRequest): Node[] {
     const p = request.payload;
+    // The first step of an inception: the passkey signs an empty commit itself, as an SSH signature.
+    const root = p.action === "incept" && p.parents.length === 0;
+    const title = root ? "Sign the inception commit" : p.action === "incept" ? "Approve the first policy" : ACTION_TITLE[p.action];
     const parents =
       p.parents.length === 0
         ? [h("span", null, "None: this is the root of trust")]
@@ -152,7 +155,7 @@ export class ApprovalSheet {
             h("span", { class: "parent" }, mono(short(oid), oid), " ", h("span", { class: "muted" }, p.action === "promote" ? (i === 0 ? "main now" : "the proposal") : p.action === "release" ? "the commit to release" : "main now")),
           );
     return [
-      h("div", { class: "sheet-head" }, seal({ size: 52, detail: "badge", label: "" }), h("h2", null, ACTION_TITLE[p.action])),
+      h("div", { class: "sheet-head" }, seal({ size: 52, detail: "badge", label: "" }), h("h2", null, title)),
       h("p", { class: "sheet-lead" }, request.summary),
       h(
         "dl",
@@ -160,9 +163,13 @@ export class ApprovalSheet {
         fact("Repository", p.repo ? mono(short(p.repo), p.repo) : "This commit becomes the repository id"),
         p.action === "release" ? fact("Tag", p.ref.replace("refs/tags/", "")) : fact("Branch", "main"),
         fact(p.parents.length === 1 ? "Parent" : "Parents", ...parents),
-        fact("Resulting tree", mono(short(p.tree), p.tree)),
+        fact("Resulting tree", root ? "Empty" : mono(short(p.tree), p.tree)),
       ),
-      p.action === "release" ? h("p", null, "A release changes no file: it names this commit of main, and your approval goes into the tag.") : h("h3", null, plural(request.changes.length, "file"), " change"),
+      root
+        ? h("p", null, "An empty commit: no files. Its committer is your passkey's SSH key fingerprint, and the next step sets the rules.")
+        : p.action === "release"
+          ? h("p", null, "A release changes no file: it names this commit of main, and your approval goes into the tag.")
+          : h("h3", null, plural(request.changes.length, "file"), " change"),
       h(
         "ul",
         { class: "file-list" },
@@ -171,7 +178,9 @@ export class ApprovalSheet {
       h(
         "p",
         { class: "muted small" },
-        "Your passkey signs a digest of exactly these facts. The signature goes into the commit, so anyone with a clone can check it without this site.",
+        root
+          ? "Your passkey signs this exact commit as an SSH signature, so git verify-commit checks it on any clone, with no forge."
+          : "Your passkey signs a digest of exactly these facts. The signature goes into the commit, so anyone with a clone can check it without this site.",
       ),
     ];
   }
@@ -181,15 +190,20 @@ export class ApprovalSheet {
     const stamp = seal({ size: 168, ring: `${state.promoter.label ?? "promoter key"} ✦ approved ✦ `, center: short(request.payload.tree), label: `Approved by ${state.promoter.label ?? "your passkey"}` });
     stamp.classList.add("stamp");
     if (!reducedMotion()) stamp.classList.add("stamp-press");
-    const raw = h("details", { class: "raw" }, h("summary", null, "Show the approval as the commit stores it"), h("p", { class: "muted" }, "Loading…"));
+    const root = request.payload.action === "incept" && request.payload.parents.length === 0;
+    const raw = h("details", { class: "raw" }, h("summary", null, root ? "Show the signature as the commit stores it" : "Show the approval as the commit stores it"), h("p", { class: "muted" }, "Loading…"));
     const done = h("button", { class: "primary", type: "button", value: "done", "data-autofocus": true }, "Done");
     this.show(
       "signed",
-      h("div", { class: "signed" }, stamp, h("div", null, h("h2", null, "Approved"), h("p", null, "Main is now at ", mono(short(head), head), "."), h("p", { class: "muted" }, request.summary))),
+      h("div", { class: "signed" }, stamp, h("div", null, h("h2", null, root ? "Signed" : "Approved"), h("p", null, "Main is now at ", mono(short(head), head), "."), h("p", { class: "muted" }, request.summary))),
       raw,
       h("div", { class: "sheet-actions" }, done),
     );
     void this.forge.commit(state.id, head).then((detail) => {
+      if (detail.result === "ok" && !detail.value.approval && detail.value.signature) {
+        raw.replaceChildren(raw.firstChild!, h("pre", { class: "code", tabindex: 0 }, detail.value.signature));
+        return;
+      }
       if (detail.result !== "ok" || !detail.value.approval) return;
       const { clientData, ...trailer } = detail.value.approval;
       raw.replaceChildren(raw.firstChild!, h("pre", { class: "code", tabindex: 0 }, JSON.stringify({ ...trailer, clientData }, null, 2)));
@@ -259,7 +273,11 @@ export class CommitSheet {
         ? h(
             "section",
             { class: ["proof", laneClass(signer?.kind === "author" ? signer.id : "x")] },
-            h("h3", null, signer?.id ? `Signed by ${agentName(signer.id) ?? signer.id}'s key` : "Signed with an SSH key"),
+            h(
+              "h3",
+              null,
+              signer?.kind === "promoter" && !signer.id ? "Signed by a passkey, as an SSH signature" : signer?.id ? `Signed by ${agentName(signer.id) ?? signer.id}'s key` : "Signed with an SSH key",
+            ),
             signer?.fingerprint ? h("p", null, mono(shortFingerprint(signer.fingerprint), signer.fingerprint)) : null,
             h("details", { class: "raw" }, h("summary", null, "Show the signature"), h("pre", { class: "code", tabindex: 0 }, c.signature)),
           )

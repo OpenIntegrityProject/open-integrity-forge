@@ -5,7 +5,7 @@ import { commitSigned } from "../authority/make.ts";
 import { generateKey, publicKeyText } from "../authority/sshsig.ts";
 import { onPushed } from "../src/events.ts";
 import { repoHost } from "../src/repo-host.ts";
-import { must, Person, testForge, uniqueName } from "./harness.ts";
+import { must, Person, testForge, uniqueName, createProject } from "./harness.ts";
 
 describe("a person's laptop key", () => {
   it("is admitted under a passkey approval, and a signed push to its fork verifies like an agent's", async () => {
@@ -13,7 +13,7 @@ describe("a person's laptop key", () => {
     const leo = new Person(app);
     const name = uniqueName("Leo");
     await leo.register(name);
-    const id = must(await leo.forge.approve(must(await leo.forge.prepareProject("laptop")))).id;
+    const id = must(await createProject(leo, "laptop")).id;
     expect(await leo.forge.preparePerson(id, "not a key")).toMatchObject({ result: "refused", status: 400 });
 
     const laptop = await generateKey();

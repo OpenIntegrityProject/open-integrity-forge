@@ -38,7 +38,8 @@ const subscriptions = (): Subscription[] => JSON.parse(wrangler(["queues", "subs
 
 const { forge, register, waitFor } = session(origin, true);
 await register(`Push${Date.now().toString(36)}`);
-const created = must(await forge.approve(must(await forge.prepareProject("push-check"), "prepare")), "approve");
+const signed = must(await forge.approve(must(await forge.prepareProject("push-check"), "prepare")), "sign inception");
+const created = must(await forge.approve(must(await forge.prepareInception(signed.id), "prepare first policy")), "approve first policy");
 const id = created.id;
 must(await forge.approve(must(await forge.prepareAgents(id, ["Ada", "Bo"]), "prepare agents")), "approve agents");
 let state = await waitFor(id, (s) => s.proposals.filter((p) => p.status === "ready").length === 2, "the agents' proposals");

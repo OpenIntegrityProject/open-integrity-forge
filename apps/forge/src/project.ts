@@ -25,11 +25,12 @@ import {
   type Change,
   type Identity,
 } from "../authority/git.ts";
-import { approvalPayload, commitApproved, tagApproved, withAuthors } from "../authority/make.ts";
+import { approvalPayload, commitApproved, commitInception, inceptionPayload, tagApproved, withAuthors, type InceptionInput } from "../authority/make.ts";
 import { parsePolicy, POLICY_PATH, withRevoked, type Author, type Policy, type WebAuthnPromoter } from "../authority/policy.ts";
 import { diffLines, type FileDiff } from "../authority/diff.ts";
 import { approvalEnvelopes } from "../authority/envelope.ts";
-import { verifyHistory, verifyProposal, type HistoryReport, type ProposalReport, type CommitReport } from "../authority/verify.ts";
+import { EMPTY_TREE, verifyHistory, verifyProposal, type HistoryReport, type ProposalReport, type CommitReport } from "../authority/verify.ts";
+import { blobFingerprint, skPublicKeyBlob, sshChallenge, webauthnSignature } from "../authority/webauthn-sshsig.ts";
 import type { AgentIdentity } from "./agent-run.ts";
 import { repoHost, type MemRepo, type RepoHost, type Transport } from "./repo-host.ts";
 import type {
@@ -51,7 +52,7 @@ import { repoIndex } from "./repo-index.ts";
 import { subscribePushes, unsubscribe } from "./subscriptions.ts";
 import { noteClient } from "./llm.ts";
 import { firstTask, GIVEN_TASKS, PERMANENT_KEY, taskById } from "./tasks.ts";
-import { inceptionMessage, policyFiles, templateFiles } from "./template.ts";
+import { inceptionMessage, policyFiles, rootMessage, templateFiles } from "./template.ts";
 import { verifier } from "./verifier.ts";
 import { fingerprint, parsePublicKeyText, publicKeyText } from "../authority/sshsig.ts";
 
@@ -87,7 +88,8 @@ interface ProjectRow {
   mainHead: string | null;
 }
 
-type ApprovalKind = "incept" | "admit" | "revoke" | "promote" | "release";
+/** "sign" is the passkey's SSH signature of the empty inception commit; the others are approvals in a trailer. */
+type ApprovalKind = "sign" | "incept" | "admit" | "revoke" | "promote" | "release";
 
 type AgentRow = {
   id: string;
@@ -308,6 +310,7 @@ export class Project extends DurableObject<Env> {
     promoters: WebAuthnPromoter[],
     data: unknown,
     changes: Change[],
+    challenge?: string,
   ): Promise<ApprovalRequest> {
     const project = this.project()!;
     const bytes = encodePayload(payload);
@@ -321,15 +324,45 @@ export class Project extends DurableObject<Env> {
       Date.now(),
     );
     const options = await approvalRequestOptions(bytes, promoters[0]!, project.rp.rpId);
+    if (challenge) options.challenge = challenge;
     options.allowCredentials = promoters.map((p) => ({ id: p.credentialId, type: "public-key" as const }));
     return { approvalId: id, projectId: project.id, payload, options, changes, summary: payload.summary };
   }
 
-  /** Request the inception approval: the template, with a policy that names the owner's passkey as the only promoter. */
+  /** The empty inception commit of a project: its author is the promoter, its committer the passkey's SSH fingerprint. */
+  private async inceptionInput(project: ProjectRow, at: number): Promise<InceptionInput> {
+    const fingerprint = await blobFingerprint(skPublicKeyBlob(project.promoter.publicKey, project.rp.rpId));
+    const identity = this.promoterIdentity(at);
+    return { author: identity, committer: { ...identity, name: fingerprint }, message: rootMessage(project.name, project.promoter.id, fingerprint) };
+  }
+
+  /**
+   * Request the next step of a project's inception. First the passkey signs
+   * an empty inception commit as an SSH signature; its id becomes the
+   * repository id. Then the passkey approves the first policy: the template,
+   * with a policy that names that passkey as the only promoter.
+   */
   async prepareInception(): Promise<Result<ApprovalRequest>> {
     const project = this.project();
     if (!project) return refuse(404, "no-project", "There is no such project.");
-    if (project.repoId) return refuse(409, "exists", "This project already has its inception commit.");
+    if (project.repoId && project.mainHead !== project.repoId) return refuse(409, "exists", "This project already has its inception commit.");
+    if (project.promoter.alg !== -7) {
+      return refuse(400, "passkey-algorithm", "Your promoter passkey uses EdDSA. A Git signature from a passkey needs a P-256 (ES256) passkey.");
+    }
+    if (!project.repoId) {
+      const at = Date.now();
+      const input = await this.inceptionInput(project, at);
+      const { payload } = approvalPayload({
+        repo: null,
+        action: "incept",
+        parents: [],
+        tree: EMPTY_TREE,
+        summary: `Sign the inception commit of ${project.name}: its id becomes the repository id`,
+        at,
+      });
+      const challenge = await sshChallenge(await inceptionPayload(input));
+      return { ok: true, value: await this.request("sign", payload, [promoterEntry(project.promoter)], { at }, [], challenge) };
+    }
     const policy: Policy = {
       version: 1,
       webauthn: project.rp,
@@ -341,11 +374,11 @@ export class Project extends DurableObject<Env> {
     const files = templateFiles(project.name, policy, await verifier(this.env), project.repoName);
     const tree = await writeFiles(repo, files);
     const { payload } = approvalPayload({
-      repo: null,
+      repo: project.repoId,
       action: "incept",
-      parents: [],
+      parents: [project.repoId],
       tree,
-      summary: `Create ${project.name} with ${project.promoter.id} as its only promoter`,
+      summary: `Set the first policy of ${project.name}, with ${project.promoter.id} as its only promoter`,
       at: Date.now(),
     });
     const changes = Object.keys(files)
@@ -587,6 +620,18 @@ export class Project extends DurableObject<Env> {
       if (!assertionShape(response)) return refuse(400, "bad-response", "The passkey response is not an assertion.");
       // Single use: mark it before anything can fail.
       this.sql.exec("UPDATE approvals SET used_at = ? WHERE id = ?", Date.now(), approvalId);
+      if (row.kind === "sign") {
+        try {
+          await this.signInception(project, JSON.parse(row.data).at as number, response);
+        } catch (error) {
+          if (error instanceof Refused) {
+            this.event("refusal", error.reason);
+            return refuse(error.status, error.error, error.reason);
+          }
+          throw error;
+        }
+        return { ok: true, value: await this.state() };
+      }
       const bytes = fromBase64Url(row.payload);
       const approval = approvalFrom(bytes, response);
       const payload = JSON.parse(new TextDecoder().decode(bytes)) as ApprovalPayload;
@@ -614,18 +659,14 @@ export class Project extends DurableObject<Env> {
     return check.promoter.id;
   }
 
-  private async incept(project: ProjectRow, payload: ApprovalPayload, approval: Approval, policy: Policy) {
+  /** Write the empty inception commit with the passkey's SSH signature, and make it main of a new repository. */
+  private async signInception(project: ProjectRow, at: number, response: { response: { authenticatorData: string; clientDataJSON: string; signature: string } }) {
     if (project.repoId) throw new Refused(409, "exists", "This project already has its inception commit.");
-    const by = await this.check(approval, policy);
+    const blob = skPublicKeyBlob(project.promoter.publicKey, project.rp.rpId);
     const repo = await memoryRepo();
-    const tree = await writeFiles(repo, templateFiles(project.name, policy, await verifier(this.env), project.repoName));
-    if (tree !== payload.tree) throw new Refused(409, "changed", "The template changed since the approval was asked for.");
-    const oid = await commitApproved(repo, {
-      payload,
-      approval,
-      message: inceptionMessage(project.name),
-      committer: this.promoterIdentity(Date.now()),
-    });
+    const oid = await commitInception(repo, await this.inceptionInput(project, at), async () => webauthnSignature(blob, response.response));
+    const report = await verifyHistory(repo, oid);
+    if (!report.ok) throw new Refused(403, "approval-refused", `The inception commit does not verify: ${report.commits[0]!.rules.find((r) => !r.ok)!.reason}`);
     await setRef(repo, "refs/heads/main", oid);
     const host = this.host();
     await host.create(project.repoName);
@@ -634,9 +675,30 @@ export class Project extends DurableObject<Env> {
     await repoIndex(this.env).put(project.repoName, { projectId: project.id, agentId: null });
     await this.subscribe(project.repoName);
     this.saveProject({ ...project, repoId: oid, mainHead: oid });
-    this.cache("policy", policy);
-    this.event("project", `Inception commit ${oid.slice(0, 7)} approved by ${by}. It is the root of trust and the repository id.`);
+    this.event("project", `Inception commit ${oid.slice(0, 7)} signed by the passkey of ${project.promoter.id}. It is the root of trust and the repository id.`);
     await this.recordHistory(repo, oid);
+  }
+
+  /** Write the commit that sets the first policy, on top of the inception commit. */
+  private async incept(project: ProjectRow, payload: ApprovalPayload, approval: Approval, policy: Policy) {
+    if (!project.repoId || project.mainHead !== project.repoId) throw new Refused(409, "exists", "This project already has its first policy.");
+    const by = await this.check(approval, policy);
+    const ws = await this.workspace("write");
+    if (payload.parents[0] !== ws.main || ws.main !== project.repoId) throw new Refused(409, "stale", "Main moved since this change was shown. Ask again.");
+    const tree = await writeFiles(ws.repo, templateFiles(project.name, policy, await verifier(this.env), project.repoName));
+    if (tree !== payload.tree) throw new Refused(409, "changed", "The template changed since the approval was asked for.");
+    const oid = await commitApproved(ws.repo, {
+      payload,
+      approval,
+      message: inceptionMessage(project.name),
+      committer: this.promoterIdentity(Date.now()),
+    });
+    await setRef(ws.repo, "refs/heads/main", oid);
+    await ws.transport.push(ws.repo, "refs/heads/main", "refs/heads/main", ws.main);
+    this.saveProject({ ...project, mainHead: oid });
+    this.cache("policy", policy);
+    this.event("policy", `Policy commit ${oid.slice(0, 7)} approved by ${by}: the first rules of the repository.`);
+    await this.recordHistory(ws.repo, oid);
   }
 
   private async admit(
@@ -1094,7 +1156,8 @@ export class Project extends DurableObject<Env> {
                 `node forge-verify.mjs ${dir} --repo ${project.repoId}`,
               ]
             : [`node apps/forge/scripts/forge-verify.ts ${dir} --repo ${project.repoId}`]),
-          `git -C ${dir} -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature --format="%h %s"`,
+          // TZ=UTC: under daylight saving time, git on macOS gives ssh-keygen a verify time an hour late.
+          `TZ=UTC git -C ${dir} -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature --format="%h %s"`,
         ],
       },
     };

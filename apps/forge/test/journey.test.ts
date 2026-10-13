@@ -8,19 +8,30 @@ describe("the whole journey", () => {
     const key = await leo.register(uniqueName("Leo"));
     expect(key.label).toMatch(/^[a-z]{4}-[a-z]{4}-[a-z]{4}$/);
 
-    // Touch ID #1: the inception commit.
+    // Touch ID #1: the passkey signs the empty inception commit as an SSH signature.
     const inception = must(await leo.forge.prepareProject("gordian notes"));
-    expect(inception.payload).toMatchObject({ action: "incept", repo: null, parents: [] });
+    expect(inception.payload).toMatchObject({ action: "incept", repo: null, parents: [], tree: "4b825dc642cb6eb9a060e54bf8d69288fbee4904" });
     expect(inception.options.allowCredentials).toEqual([{ id: key.credentialId, type: "public-key" }]);
-    expect(inception.changes.map((c) => c.path)).toContain(".repo/config/verification/policy.json");
-    const created = must(await leo.forge.approve(inception));
-    expect(created.repoId).toMatch(/^[0-9a-f]{40}$/);
-    expect(created.history?.ok).toBe(true);
-    expect(created.history?.commits[0]?.rules[0]?.reason).toContain("Root of trust");
-    expect(inception.changes.map((c) => c.path)).toContain(".github/workflows/verify.yml");
-    const id = created.id;
+    expect(inception.changes).toEqual([]);
+    const signed = must(await leo.forge.approve(inception));
+    expect(signed.repoId).toMatch(/^[0-9a-f]{40}$/);
+    expect(signed.mainHead).toBe(signed.repoId);
+    expect(signed.policy).toBeNull();
+    expect(signed.history?.ok).toBe(true);
+    expect(signed.history?.commits[0]?.rules[0]?.reason).toContain("Root of trust: an empty commit signed by the passkey");
+    const id = signed.id;
 
-    // Touch ID #2: admit two author keys.
+    // Touch ID #2: the same passkey approves the first policy.
+    const first = must(await leo.forge.prepareInception(id));
+    expect(first.payload).toMatchObject({ action: "incept", repo: signed.repoId, parents: [signed.repoId] });
+    expect(first.changes.map((c) => c.path)).toContain(".repo/config/verification/policy.json");
+    expect(first.changes.map((c) => c.path)).toContain(".github/workflows/verify.yml");
+    const created = must(await leo.forge.approve(first));
+    expect(created.history?.ok).toBe(true);
+    expect(created.policy?.promoters.map((p) => p.id)).toEqual([key.id]);
+    expect(await leo.forge.prepareInception(id)).toMatchObject({ result: "refused", status: 409 });
+
+    // Touch ID #3: admit two author keys.
     const admission = must(await leo.forge.prepareAgents(id, ["Ada", "Bo"]));
     expect(admission.payload).toMatchObject({ action: "policy", repo: created.repoId, parents: [created.mainHead] });
     must(await leo.forge.approve(admission));
@@ -44,7 +55,7 @@ describe("the whole journey", () => {
     const refusedRogue = await leo.forge.preparePromotion(id, rogue.id);
     expect(refusedRogue).toMatchObject({ result: "refused", status: 409 });
 
-    // Touch ID #3: promote Ada. Bo's honest proposal goes stale and verifies again on the new main.
+    // Touch ID #4: promote Ada. Bo's honest proposal goes stale and verifies again on the new main.
     const ada = state.proposals.find((p) => p.agentId === "ada")!;
     const promotion = must(await leo.forge.preparePromotion(id, ada.id));
     expect(promotion.payload.parents).toEqual([state.mainHead, ada.head]);
@@ -55,10 +66,10 @@ describe("the whole journey", () => {
     expect(bo.status).toBe("ready");
     expect(bo.base).toBe(state.mainHead);
 
-    // A fourth tap promotes Bo's honest change too.
+    // A fifth tap promotes Bo's honest change too.
     state = must(await leo.forge.approve(must(await leo.forge.preparePromotion(id, bo.id))));
     expect(state.history?.ok).toBe(true);
-    expect(state.history?.commits.map((c) => c.role)).toEqual(["inception", "main", "merged", "main", "merged", "main"]);
+    expect(state.history?.commits.map((c) => c.role)).toEqual(["inception", "main", "main", "merged", "main", "merged", "main"]);
 
     // A fresh clone, with the repository id pinned, gives the same answer.
     const fresh = must(await leo.forge.verifyFresh(id));
@@ -68,10 +79,15 @@ describe("the whole journey", () => {
 
     // The commit sheet reads commits from main and from forks, with their proof.
     const root = must(await leo.forge.commit(id, state.repoId!));
-    expect(root.approval?.payload).toMatchObject({ action: "incept", repo: null, parents: [] });
+    expect(root.approval).toBeNull();
+    expect(root.signature).toContain("BEGIN SSH SIGNATURE");
+    expect(root.committer.name).toMatch(/^SHA256:/);
     expect(root.report?.rules[0]?.rule).toBe("R0");
-    expect(root.changes.map((c) => c.path)).toContain(".repo/config/verification/policy.json");
-    expect(root.message).not.toContain("Forge-Approval");
+    expect(root.changes).toEqual([]);
+    const policyCommit = must(await leo.forge.commit(id, created.mainHead!));
+    expect(policyCommit.approval?.payload).toMatchObject({ action: "incept", repo: state.repoId, parents: [state.repoId] });
+    expect(policyCommit.changes.map((c) => c.path)).toContain(".repo/config/verification/policy.json");
+    expect(policyCommit.message).not.toContain("Forge-Approval");
     const rogueCommit = must(await leo.forge.commit(id, rogue.head));
     expect(rogueCommit.signature).toContain("BEGIN SSH SIGNATURE");
     expect(rogueCommit.approval).toBeNull();

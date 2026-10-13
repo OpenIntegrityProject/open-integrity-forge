@@ -5,13 +5,13 @@ import { commitSigned } from "../authority/make.ts";
 import { fingerprint, generateKey } from "../authority/sshsig.ts";
 import { onPushed, type PushedEvent } from "../src/events.ts";
 import { repoHost } from "../src/repo-host.ts";
-import { must, Person, testForge, uniqueName, waitFor } from "./harness.ts";
+import { must, Person, testForge, uniqueName, waitFor, createProject } from "./harness.ts";
 
 async function withAgents() {
   const app = testForge();
   const leo = new Person(app);
   await leo.register(uniqueName("Leo"));
-  const created = must(await leo.forge.approve(must(await leo.forge.prepareProject("pushes"))));
+  const created = must(await createProject(leo, "pushes"));
   must(await leo.forge.approve(must(await leo.forge.prepareAgents(created.id, ["Ada", "Bo"]))));
   const state = await waitFor(leo, created.id, (s) => s.proposals.filter((p) => p.status === "ready").length === 2, "two proposals");
   return { app, leo, id: created.id, state };

@@ -37,7 +37,13 @@ for (const scheme of ["light", "dark"] as const) {
     await audit(page, "start");
 
     await page.getByRole("button", { name: "Create with passkey" }).click();
-    await expect(page.locator("#approval")).toContainText("Approve the first commit");
+    await expect(page.locator("#approval")).toContainText("Sign the inception commit");
+    await audit(page, "signing sheet");
+    await page.locator("#approval").getByRole("button", { name: "Approve with passkey" }).click();
+    await expect(page.locator("#approval")).toContainText("Main is now at");
+    await audit(page, "inception signed");
+    await page.locator("#approval").getByRole("button", { name: "Done" }).click();
+    await expect(page.locator("#approval")).toContainText("Approve the first policy", { timeout: 30_000 });
     await audit(page, "approval sheet");
     await page.locator("#approval").getByRole("button", { name: "Approve with passkey" }).click();
     await expect(page.locator("#approval")).toContainText("Main is now at");
@@ -58,7 +64,7 @@ for (const scheme of ["light", "dark"] as const) {
     await page.waitForTimeout(7000);
     await audit(page, "stage");
 
-    await page.locator(".graph .node").first().click();
+    await page.locator(".graph .node").nth(1).click();
     await expect(page.locator("#commit")).toContainText("Approved by a passkey", { timeout: 30_000 });
     await audit(page, "commit sheet");
   });

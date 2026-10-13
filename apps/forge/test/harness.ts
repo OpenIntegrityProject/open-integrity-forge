@@ -70,6 +70,17 @@ export class Person {
   }
 }
 
+/** Create a project as the page does: sign the empty inception commit, then approve the first policy. */
+export async function createProject(person: Person, name: string): Promise<Outcome<ProjectState>> {
+  const prepared = await person.forge.prepareProject(name);
+  if (prepared.result !== "ok") return prepared;
+  const signed = await person.forge.approve(prepared.value);
+  if (signed.result !== "ok") return signed;
+  const first = await person.forge.prepareInception(signed.value.id);
+  if (first.result !== "ok") return first;
+  return person.forge.approve(first.value);
+}
+
 export function must<T>(outcome: Outcome<T>): T {
   if (outcome.result === "ok") return outcome.value;
   throw new Error(outcome.result === "cancelled" ? "cancelled" : `${outcome.status} ${outcome.refusal.error}: ${outcome.refusal.reason}`);

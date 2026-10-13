@@ -26,9 +26,11 @@ To check it with no server, on any clone, with Node 22 or later:
     curl -fsSLO <forge>/forge-verify.mjs     # the digest is in .github/workflows/verify.yml
     node forge-verify.mjs . --repo <the id of the first commit>
 
-To check the author signatures with git alone:
+To check the inception commit and the author signatures with git alone
+(TZ=UTC, because under daylight saving time git on macOS checks a key's
+window an hour late):
 
-    git -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
+    TZ=UTC git -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
 `;
 
 export const WORKFLOW_PATH = ".github/workflows/verify.yml";
@@ -121,6 +123,19 @@ export function templateFiles(name: string, policy: Policy, verifier: Verifier |
 /** The policy file and the allowed signers file made from it. */
 export function policyFiles(policy: Policy): Record<string, string> {
   return { [POLICY_PATH]: renderPolicy(policy), [ALLOWED_SIGNERS_PATH]: allowedSigners(policy) };
+}
+
+/** The message of the empty inception commit, in the Open Integrity form. */
+export function rootMessage(name: string, promoter: string, fingerprint: string): string {
+  return `Initialize repository and establish a SHA-1 root of trust
+
+This empty commit is the root of trust of ${name}, and its id is the
+repository id. It is signed by the passkey of ${promoter}, whose SSH key
+fingerprint is the committer. The next commit sets the signer policy,
+and the same passkey approves it.
+
+Signed-off-by: ${fingerprint} <promoter@forge.invalid>
+`;
 }
 
 export function inceptionMessage(name: string): string {
