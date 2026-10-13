@@ -20,7 +20,7 @@
   },
   "vars": {
     "RP_ID": "forgedemo.gordianstack.com",
-    "RP_NAME": "Forge demo",
+    "RP_NAME": "Open Integrity Forge Demo",
     "ORIGIN": "https://forgedemo.gordianstack.com",
     "REFUSAL_FLOOR_MS": "800",
     // "artifacts" keeps repos in Cloudflare Artifacts; "local" keeps them in the LocalRepo Durable Object.

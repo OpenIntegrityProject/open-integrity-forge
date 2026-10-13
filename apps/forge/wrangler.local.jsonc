@@ -19,7 +19,7 @@
   },
   "vars": {
     "RP_ID": "localhost",
-    "RP_NAME": "Forge demo (local)",
+    "RP_NAME": "Open Integrity Forge Demo (local)",
     "ORIGIN": "http://localhost:8787",
     "REFUSAL_FLOOR_MS": "800",
     "REPO_HOST": "local",

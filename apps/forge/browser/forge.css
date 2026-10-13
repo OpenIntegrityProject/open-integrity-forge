@@ -170,6 +170,7 @@ a {
   color: var(--ink);
   text-decoration: none;
   letter-spacing: 0.01em;
+  line-height: 1.15;
 }
 .project-switch select {
   font: inherit;
@@ -182,6 +183,16 @@ a {
 }
 .app-bar {
   justify-content: flex-start;
+}
+.site-foot {
+  /* Lines up with main's content edge at every width. */
+  margin: -3rem max(1rem, calc((100% - 84rem) / 2)) 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+.site-foot p {
+  margin: 0;
 }
 #signed-in:not([hidden]),
 #open-sign-in:not([hidden]) {
