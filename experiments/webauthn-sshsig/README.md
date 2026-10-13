@@ -25,4 +25,21 @@ So a passkey can sign merges to main today, with no change to Git or OpenSSH. Tw
 - `allowed_signers` accepts only `cert-authority`, `namespaces`, `valid-after` and `valid-before`; OpenSSH's `verify-required` is an `authorized_keys` option. Requiring user verification has to be done by the repository's own verifier.
 - The Open Integrity verifier reads authenticator flags only from signature types that begin with `sk-`, so it reports none for `webauthn-sk-` signatures.
 
-Not yet tested: a real passkey ceremony in a browser, which fixes `clientDataJSON` and the key order of its fields.
+## A real passkey ceremony
+
+`ceremony/` runs the same test with a real passkey in a browser. `server.py` (standard library only) serves `index.html` on `http://localhost:8790`. The page creates a P-256 passkey, the server builds an empty inception commit whose committer is the key's fingerprint, the page signs that commit's SSHSIG data as the WebAuthn challenge, and the server stores the assertion as the commit's `gpgsig`:
+
+```sh
+python3 ceremony/server.py <workdir>          # then open http://localhost:8790
+git -C <workdir> -c gpg.ssh.allowedSignersFile=allowed_signers verify-commit main
+```
+
+| Test | Result |
+|---|---|
+| Inception commit signed by a passkey in Chrome on macOS with Touch ID, flags `1d` (present, verified, backup eligible, backed up) | `git verify-commit`: `Good "git" signature ... ECDSA-SK key`; `%G?` is `G` |
+| Same signature, one word of the message changed | rejected by `ssh-keygen -Y verify` |
+| A software key standing in for the browser, through the same server | accepted; with `clientDataJSON` altered after signing, rejected |
+
+Chrome added a field, `other_keys_can_be_added_here`, to `clientDataJSON`, as it does at random to discourage parsing it against a template. OpenSSH still accepted the signature, so an extra trailing field does not matter to it, while the signature covers every byte of the JSON. A signer must store `clientDataJSON` exactly as the browser returned it.
+
+`ceremony/result/` holds that run: the commit as a bundle and as text, the public key, the signed payload and its signature, and the `allowed_signers` line that verifies them.
