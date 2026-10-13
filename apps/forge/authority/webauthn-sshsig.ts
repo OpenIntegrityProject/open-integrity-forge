@@ -100,6 +100,43 @@ function fixed32(value: Uint8Array): Uint8Array {
   return out;
 }
 
+/**
+ * The WebAuthn assertion inside a webauthn-sk signature, as the browser gave
+ * it: authenticator data, clientDataJSON and the DER signature, base64url.
+ * Null when the signature is not of this kind.
+ */
+export async function webauthnAssertion(armored: string): Promise<{ authenticatorData: string; clientDataJSON: string; signature: string } | null> {
+  try {
+    const text = armored.trim();
+    const reader = new Reader(fromBase64(text.slice(BEGIN.length, -END.length)));
+    reader.take(10);
+    const key = new Reader(reader.string());
+    reader.string();
+    reader.string();
+    reader.string();
+    const sig = new Reader(reader.string());
+    if (key.text() !== SK_KEY_TYPE || sig.text() !== WEBAUTHN_SIG_TYPE) return null;
+    key.string();
+    key.string();
+    const rpId = key.text();
+    const ecdsa = new Reader(sig.string());
+    const [r, s] = [ecdsa.string(), ecdsa.string()];
+    const flagsAndCounter = sig.take(5);
+    sig.string();
+    const clientData = sig.string();
+    const extensions = sig.string();
+    const der = (n: Uint8Array) => concat(new Uint8Array([0x02, n.length]), n);
+    const body = concat(der(r), der(s));
+    return {
+      authenticatorData: toBase64Url(concat(await sha256(rpId), flagsAndCounter, extensions)),
+      clientDataJSON: toBase64Url(clientData),
+      signature: toBase64Url(concat(new Uint8Array([0x30, body.length]), body)),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type WebauthnCheck =
   | { ok: true; keyBlob: Uint8Array; fingerprint: string; rpId: string; origin: string; flags: number }
   | { ok: false; reason: string };
@@ -146,6 +183,7 @@ export async function verifyWebauthn(armored: string, message: Uint8Array | stri
     if (clientData.type !== "webauthn.get") return no("The signature is not a WebAuthn assertion.");
     if (clientData.challenge !== toBase64Url(data)) return no("The passkey signed a different message.");
     if (clientData.origin !== origin) return no("The signature names two different origins.");
+    if (clientData.crossOrigin === true || clientData.topOrigin !== undefined) return no("The passkey signed in a frame.");
     if (!(flags & FLAG_UP)) return no("The authenticator did not see the person.");
     if (!(flags & FLAG_UV)) return no("The authenticator did not verify the person.");
 

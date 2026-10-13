@@ -2,7 +2,7 @@
 // commits of main and signed commits of an author. The forge Worker and the
 // tests use them. The verifier does not.
 
-import { encodePayload, MAIN_REF, trailerLine, withTrailer, type Approval, type ApprovalAction, type ApprovalPayload } from "./approval.ts";
+import { encodePayload, MAIN_REF, trailerLine, withFacts, withTrailer, type Approval, type ApprovalAction, type ApprovalPayload } from "./approval.ts";
 import { commitTree, memoryRepo, writeFiles, writeTag, type Identity, type Repo } from "./git.ts";
 import type { Author, Policy } from "./policy.ts";
 import { sign } from "./sshsig.ts";
@@ -32,6 +32,34 @@ export function commitApproved(
     message: withTrailer(input.message, input.approval),
     author: input.committer,
   });
+}
+
+/** A commit of main that a promoter's passkey signs as a whole: its payload, its message and who made it. */
+export interface PasskeyCommitInput {
+  payload: ApprovalPayload;
+  message: string;
+  committer: Identity;
+}
+
+/** Write a commit of main whose SSH signature, from `sign`, is its approval. It does not move a ref. */
+export function commitPasskeySigned(repo: Repo, input: PasskeyCommitInput, sign: (payload: string) => Promise<string>): Promise<string> {
+  return commitTree(repo, {
+    tree: input.payload.tree,
+    parents: input.payload.parents,
+    message: withFacts(input.message, encodePayload(input.payload)),
+    author: input.committer,
+    sign,
+  });
+}
+
+/** The exact text a passkey signs for such a commit: the commit without its signature. */
+export async function passkeyCommitPayload(input: PasskeyCommitInput): Promise<string> {
+  let payload = "";
+  await commitPasskeySigned(await memoryRepo(), input, async (text) => {
+    payload = text;
+    return "-----BEGIN SSH SIGNATURE-----\n-----END SSH SIGNATURE-----\n";
+  });
+  return payload;
 }
 
 /** An empty inception commit: who made it, and its message. Its committer name is the signing key's fingerprint. */

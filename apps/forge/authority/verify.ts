@@ -27,7 +27,7 @@
 //     that commit asks (releaseApprovals, one when absent).
 // M   A proposal merges into main with no conflicts.
 
-import { approvalIn, approvalsIn, MAIN_REF, verifyApproval, type ApprovalPayload } from "./approval.ts";
+import { approvalIn, approvalsIn, factsIn, MAIN_REF, verifyApproval, type ApprovalPayload } from "./approval.ts";
 import {
   annotatedTags,
   firstParentChain,
@@ -41,7 +41,7 @@ import {
   type Commit,
   type Repo,
 } from "./git.ts";
-import { parsePolicy, POLICY_PATH, type Author, type Policy, type Promoter } from "./policy.ts";
+import { parsePolicy, POLICY_PATH, type Author, type Policy, type Promoter, type WebAuthnPromoter } from "./policy.ts";
 import { fingerprint, publicKeyText, verify as verifySsh } from "./sshsig.ts";
 import { blobFingerprint, skPublicKeyBlob, verifyWebauthn } from "./webauthn-sshsig.ts";
 
@@ -273,6 +273,40 @@ async function firstPolicy(policies: Policies, commit: Commit, key: InceptionKey
   return { error: `The first policy lists no promoter with the inception passkey ${key.fingerprint}.` };
 }
 
+type MainApproval = { ok: true; promoter: WebAuthnPromoter; payload: ApprovalPayload; signed: boolean } | { ok: false; reason: string; payload?: ApprovalPayload };
+
+/**
+ * A commit of main signed as a whole by a promoter's passkey: its SSH
+ * signature verifies, the key is a P-256 passkey promoter of the policy, the
+ * relying party and origin are the policy's, and the trailer holds the
+ * payload, which the signature covers.
+ */
+export async function passkeyApproval(commit: Commit, policy: Policy): Promise<MainApproval> {
+  const facts = factsIn(commit.message);
+  const payload = facts?.payload;
+  if (!commit.signature || !facts) return { ok: false, reason: "The commit is not signed by a passkey.", ...(payload ? { payload } : {}) };
+  const check = await verifyWebauthn(commit.signature, commit.payload);
+  if (!check.ok) return { ok: false, reason: check.reason, payload: facts.payload };
+  if (check.rpId !== policy.webauthn.rpId) return { ok: false, reason: `The passkey signed for ${check.rpId}, not ${policy.webauthn.rpId}.`, payload: facts.payload };
+  if (check.origin !== policy.webauthn.origin) return { ok: false, reason: `The passkey signed at ${check.origin}, not ${policy.webauthn.origin}.`, payload: facts.payload };
+  for (const p of policy.promoters) {
+    if (p.kind !== "webauthn" || p.alg !== -7) continue;
+    if ((await blobFingerprint(skPublicKeyBlob(p.publicKey, policy.webauthn.rpId))) === check.fingerprint) {
+      return { ok: true, promoter: p, payload: facts.payload, signed: true };
+    }
+  }
+  return { ok: false, reason: `Signed by the passkey ${check.fingerprint}, which the policy does not list as a promoter.`, payload: facts.payload };
+}
+
+/** The approval of a commit of main: its passkey signature, or an approval in its trailer. Null when it has neither. */
+async function mainApproval(commit: Commit, policy: Policy): Promise<MainApproval | null> {
+  if (commit.signature && factsIn(commit.message)) return passkeyApproval(commit, policy);
+  const approval = approvalIn(commit.message);
+  if (!approval) return null;
+  const check = await verifyApproval(approval, policy);
+  return check.ok ? { ...check, signed: false } : check;
+}
+
 /** R0, or R1, R4 and R2, for a commit on the first-parent chain of main. */
 async function checkMain(
   repo: Repo,
@@ -318,25 +352,28 @@ async function checkMain(
     }
   } else if ("error" in governing) {
     rules.push(fail("R1", establishing ? governing.error : `The policy of the first parent is not usable. ${governing.error}`));
-  } else if (!approval) {
-    rules.push(fail("R1", "Main moved without an approval from a promoter."));
-    rules.push(fail("R4", "There is no approval to match against this commit."));
   } else {
-    const check = await verifyApproval(approval, governing.policy);
-    if (!check.ok) rules.push(fail("R1", check.reason));
+    const check = await mainApproval(commit, governing.policy);
+    if (!check) {
+      rules.push(fail("R1", "Main moved without an approval from a promoter."));
+      rules.push(fail("R4", "There is no approval to match against this commit."));
+    } else if (!check.ok) rules.push(fail("R1", check.reason));
     else {
       signer = { kind: "promoter", id: check.promoter.id };
+      const how = check.signed ? `signed as a whole by the passkey of promoter ${check.promoter.id}` : `approved by promoter ${check.promoter.id}`;
       rules.push(
         pass(
           "R1",
           establishing
-            ? `Sets the first policy, approved by promoter ${check.promoter.id}, the passkey that signed the inception commit.`
-            : `Approved by promoter ${check.promoter.id} under the policy of ${short(parent.oid)}.`,
+            ? `Sets the first policy, ${how}, the passkey that signed the inception commit.`
+            : `${how[0]!.toUpperCase()}${how.slice(1)}, under the policy of ${short(parent.oid)}.`,
         ),
       );
     }
-    const p = check.payload;
-    if (!p) rules.push(fail("R4", "The approval payload does not decode."));
+    const p = check?.payload;
+    if (!check) {
+      // R1 and R4 failed above: there is no approval.
+    } else if (!p) rules.push(fail("R4", "The approval payload does not decode."));
     else {
       action = p.action;
       const wrong: string[] = [];

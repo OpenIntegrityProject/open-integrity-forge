@@ -19460,6 +19460,17 @@ function decodeTrailer(line) {
     return null;
   }
 }
+function factsIn(message) {
+  const line = [...message.trimEnd().split("\n")].reverse().find((l) => l.startsWith(`${TRAILER}: `));
+  if (!line) return null;
+  try {
+    const value = JSON.parse(fromUtf8(fromBase64Url(line.slice(TRAILER.length + 2).trim())));
+    if (typeof value?.payload !== "string" || "signature" in value) return null;
+    return { payload: decodePayload(fromBase64Url(value.payload)), bytes: value.payload };
+  } catch {
+    return null;
+  }
+}
 var FLAG_UP = 1;
 var FLAG_UV = 4;
 function rawFromDer(der) {
@@ -19679,6 +19690,7 @@ async function verifyWebauthn(armored, message, namespace = "git") {
     if (clientData.type !== "webauthn.get") return no("The signature is not a WebAuthn assertion.");
     if (clientData.challenge !== toBase64Url(data)) return no("The passkey signed a different message.");
     if (clientData.origin !== origin) return no("The signature names two different origins.");
+    if (clientData.crossOrigin === true || clientData.topOrigin !== void 0) return no("The passkey signed in a frame.");
     if (!(flags & FLAG_UP2)) return no("The authenticator did not see the person.");
     if (!(flags & FLAG_UV2)) return no("The authenticator did not verify the person.");
     const authData = concat(await sha256(rpId), new Uint8Array([flags]), counter, extensions);
@@ -19905,6 +19917,29 @@ async function firstPolicy(policies, commit, key) {
   }
   return { error: `The first policy lists no promoter with the inception passkey ${key.fingerprint}.` };
 }
+async function passkeyApproval(commit, policy) {
+  const facts = factsIn(commit.message);
+  const payload = facts?.payload;
+  if (!commit.signature || !facts) return { ok: false, reason: "The commit is not signed by a passkey.", ...payload ? { payload } : {} };
+  const check = await verifyWebauthn(commit.signature, commit.payload);
+  if (!check.ok) return { ok: false, reason: check.reason, payload: facts.payload };
+  if (check.rpId !== policy.webauthn.rpId) return { ok: false, reason: `The passkey signed for ${check.rpId}, not ${policy.webauthn.rpId}.`, payload: facts.payload };
+  if (check.origin !== policy.webauthn.origin) return { ok: false, reason: `The passkey signed at ${check.origin}, not ${policy.webauthn.origin}.`, payload: facts.payload };
+  for (const p of policy.promoters) {
+    if (p.kind !== "webauthn" || p.alg !== -7) continue;
+    if (await blobFingerprint(skPublicKeyBlob(p.publicKey, policy.webauthn.rpId)) === check.fingerprint) {
+      return { ok: true, promoter: p, payload: facts.payload, signed: true };
+    }
+  }
+  return { ok: false, reason: `Signed by the passkey ${check.fingerprint}, which the policy does not list as a promoter.`, payload: facts.payload };
+}
+async function mainApproval(commit, policy) {
+  if (commit.signature && factsIn(commit.message)) return passkeyApproval(commit, policy);
+  const approval = approvalIn(commit.message);
+  if (!approval) return null;
+  const check = await verifyApproval(approval, policy);
+  return check.ok ? { ...check, signed: false } : check;
+}
 async function checkMain(repo, policies, commit, parent, repoId, inception = null) {
   const rules = [];
   const approval = approvalIn(commit.message);
@@ -19939,23 +19974,25 @@ async function checkMain(repo, policies, commit, parent, repoId, inception = nul
     }
   } else if ("error" in governing) {
     rules.push(fail2("R1", establishing ? governing.error : `The policy of the first parent is not usable. ${governing.error}`));
-  } else if (!approval) {
-    rules.push(fail2("R1", "Main moved without an approval from a promoter."));
-    rules.push(fail2("R4", "There is no approval to match against this commit."));
   } else {
-    const check = await verifyApproval(approval, governing.policy);
-    if (!check.ok) rules.push(fail2("R1", check.reason));
+    const check = await mainApproval(commit, governing.policy);
+    if (!check) {
+      rules.push(fail2("R1", "Main moved without an approval from a promoter."));
+      rules.push(fail2("R4", "There is no approval to match against this commit."));
+    } else if (!check.ok) rules.push(fail2("R1", check.reason));
     else {
       signer = { kind: "promoter", id: check.promoter.id };
+      const how = check.signed ? `signed as a whole by the passkey of promoter ${check.promoter.id}` : `approved by promoter ${check.promoter.id}`;
       rules.push(
         pass(
           "R1",
-          establishing ? `Sets the first policy, approved by promoter ${check.promoter.id}, the passkey that signed the inception commit.` : `Approved by promoter ${check.promoter.id} under the policy of ${short(parent.oid)}.`
+          establishing ? `Sets the first policy, ${how}, the passkey that signed the inception commit.` : `${how[0].toUpperCase()}${how.slice(1)}, under the policy of ${short(parent.oid)}.`
         )
       );
     }
-    const p = check.payload;
-    if (!p) rules.push(fail2("R4", "The approval payload does not decode."));
+    const p = check?.payload;
+    if (!check) {
+    } else if (!p) rules.push(fail2("R4", "The approval payload does not decode."));
     else {
       action = p.action;
       const wrong = [];

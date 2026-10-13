@@ -10,6 +10,7 @@ import http from "isomorphic-git/http/web";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cloneHttp, fetchHttp, memoryRepo, pushHttp, readCommit, setRef } from "../git.ts";
 import { verifyHistory, verifyProposal } from "../verify.ts";
+import { verifyWebauthn } from "../webauthn-sshsig.ts";
 import { startGitServer, type GitServer } from "./git-server.ts";
 import { history } from "./history.ts";
 
@@ -58,7 +59,9 @@ describe("Git over HTTP with a token", () => {
     await pushHttp(h.repo, project, "refs/heads/main", "refs/heads/main");
     const again = await memoryRepo();
     await cloneHttp(again, project);
-    expect((await readCommit(again, promoted)).signature).toBeNull();
+    // The promotion is signed as a whole by the passkey, and the signature survives the round trip.
+    const back = await readCommit(again, promoted);
+    expect((await verifyWebauthn(back.signature!, back.payload)).ok).toBe(true);
     expect((await readCommit(again, work)).signature).toContain("BEGIN SSH SIGNATURE");
     const report = await verifyHistory(again, promoted);
     expect(report.ok, report.summary).toBe(true);

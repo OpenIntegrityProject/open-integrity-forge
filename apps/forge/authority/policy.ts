@@ -220,7 +220,7 @@ export function allowedSigners(policy: Policy): string {
   const lines = [
     "# Generated from policy.json. The forge verifier reads policy.json, not this file.",
     "# A P-256 passkey promoter is listed as the OpenSSH security key it signs Git commits with.",
-    "# Its approvals in commit trailers are WebAuthn assertions, which git does not check.",
+    "# Its signatures of commits of main are checked here too; its release approvals in tag messages are not.",
   ];
   for (const p of policy.promoters) {
     const id = p.id.replace(/\s+/g, "_");

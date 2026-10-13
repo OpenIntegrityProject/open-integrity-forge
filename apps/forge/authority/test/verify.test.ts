@@ -5,7 +5,7 @@ import { join } from "node:path";
 import git from "isomorphic-git";
 import { describe, expect, it } from "vitest";
 import { approvalIn, withTrailer } from "../approval.ts";
-import { changeFiles, commitTree, memoryRepo, readCommit, writeFiles } from "../git.ts";
+import { changeFiles, commitTree, firstParentChain, memoryRepo, mergeTree, readCommit, writeFiles } from "../git.ts";
 import { approvalPayload, commitApproved } from "../make.ts";
 import { skPublicKeyBlob, skPublicKeyText } from "../webauthn-sshsig.ts";
 import { POLICY_PATH, renderPolicy } from "../policy.ts";
@@ -46,19 +46,25 @@ describe("an honest history", () => {
 });
 
 describe("a passkey inception", () => {
-  it("is a commit git verify-commit accepts with the passkey in allowed signers", async () => {
+  it("and every passkey-approved commit of main are commits git verify-commit accepts", async () => {
     const h = await history();
-    const raw = new TextDecoder().decode((await git.readObject({ ...h.repo, oid: h.repoId, format: "content" })).object as Uint8Array);
+    const work = await h.work(h.ada, h.admitted, { "a.md": "a\n" });
+    const head = await h.promote(h.admitted, work);
+    const chain = await firstParentChain(h.repo, head);
+    expect(chain.map((c) => c.oid)).toEqual([head, h.admitted, h.established, h.repoId]);
     const dir = mkdtempSync(join(tmpdir(), "forge-inception-"));
     execFileSync("git", ["init", "-q", dir]);
-    const oid = execFileSync("git", ["-C", dir, "hash-object", "-t", "commit", "-w", "--stdin"], { input: raw }).toString().trim();
-    expect(oid).toBe(h.repoId);
     const blob = skPublicKeyBlob(h.leo.entry.publicKey, RP_ID);
     writeFileSync(join(dir, "allowed"), `leo@forge.invalid namespaces="git" ${skPublicKeyText(blob)}\n`);
-    // verify-commit exits non-zero, and execFileSync throws, unless the signature is good.
-    execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "verify-commit", oid], { stdio: "pipe" });
-    const status = execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "log", "-1", "--format=%G?", oid]).toString().trim();
-    expect(status).toBe("G");
+    for (const commit of chain) {
+      const raw = new TextDecoder().decode((await git.readObject({ ...h.repo, oid: commit.oid, format: "content" })).object as Uint8Array);
+      const oid = execFileSync("git", ["-C", dir, "hash-object", "-t", "commit", "-w", "--stdin"], { input: raw }).toString().trim();
+      expect(oid).toBe(commit.oid);
+      // verify-commit exits non-zero, and execFileSync throws, unless the signature is good.
+      execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "verify-commit", oid], { stdio: "pipe" });
+      const status = execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "log", "-1", "--no-walk", "--format=%G?", oid]).toString().trim();
+      expect(status, commit.oid).toBe("G");
+    }
   });
 
   it("R0: a committer that is not the signing passkey's fingerprint fails", async () => {
@@ -153,8 +159,27 @@ describe("each rule", () => {
     expect(rule((await verifyProposal(h.repo, h.admitted, unknown)).commits[0], "R3")?.reason).toContain("does not list");
   });
 
-  it("R4: an approval moved to another change, or made for another repository, fails", async () => {
+  it("R1: a passkey signature copied onto another commit fails", async () => {
     const h = await history();
+    const work = await h.work(h.ada, h.admitted, { "a.md": "a\n" });
+    const good = await readCommit(h.repo, await h.promote(h.admitted, work));
+    const other = await h.work(h.ada, h.admitted, { "b.md": "b\n" });
+    const tree = (await readCommit(h.repo, other)).tree;
+    const copied = await commitTree(h.repo, { tree, parents: [h.admitted, other], message: good.message, author: who("Leo", T0 + 60_000), sign: async () => good.signature! });
+    expect(rule((await verifyHistory(h.repo, copied)).commits.at(-1), "R1")).toMatchObject({ ok: false, reason: "The passkey signed a different message." });
+  });
+
+  it("R1: a commit of main signed by a passkey the policy does not list fails", async () => {
+    const h = await history();
+    const work = await h.work(h.ada, h.admitted, { "a.md": "a\n" });
+    const mallory = await testPromoter("mallory");
+    const merged = await mergeTree(h.repo, h.admitted, work);
+    const forged = await h.approve({ action: "promote", parents: [h.admitted, work], tree: (merged as { tree: string }).tree, summary: "Mallory merges", by: mallory });
+    expect(rule((await verifyHistory(h.repo, forged)).commits.at(-1), "R1")?.reason).toContain("which the policy does not list as a promoter");
+  });
+
+  it("R4: an approval moved to another change, or made for another repository, fails", async () => {
+    const h = await history({ olderRoot: true });
     const work = await h.work(h.ada, h.admitted, { "a.md": "a\n" });
     const good = await h.promote(h.admitted, work);
     const approval = approvalIn((await readCommit(h.repo, good)).message)!;

@@ -115,6 +115,33 @@ function decodeTrailer(line: string): Approval | null {
   }
 }
 
+/**
+ * The trailer of a commit that a passkey signs as a whole: the approval
+ * payload alone, as base64url. The commit's SSH signature covers it, so the
+ * signature is the approval and the trailer needs no assertion of its own.
+ */
+export function factsLine(payload: Uint8Array): string {
+  return `${TRAILER}: ${toBase64Url(utf8(JSON.stringify({ payload: toBase64Url(payload) })))}`;
+}
+
+/** A commit message with the payload trailer at its end. */
+export function withFacts(message: string, payload: Uint8Array): string {
+  return `${message.trimEnd()}\n\n${factsLine(payload)}\n`;
+}
+
+/** The payload in a commit's trailer when the trailer holds a payload and no assertion, else null. */
+export function factsIn(message: string): { payload: ApprovalPayload; bytes: string } | null {
+  const line = [...message.trimEnd().split("\n")].reverse().find((l) => l.startsWith(`${TRAILER}: `));
+  if (!line) return null;
+  try {
+    const value = JSON.parse(fromUtf8(fromBase64Url(line.slice(TRAILER.length + 2).trim())));
+    if (typeof value?.payload !== "string" || "signature" in value) return null;
+    return { payload: decodePayload(fromBase64Url(value.payload)), bytes: value.payload };
+  } catch {
+    return null;
+  }
+}
+
 /** A commit message with the approval trailer at its end. */
 export function withTrailer(message: string, approval: Approval): string {
   return `${message.trimEnd()}\n\n${trailerLine(approval)}\n`;
