@@ -1,8 +1,8 @@
-# Forge: agents write, a person promotes
+# Open Integrity Forge Demo
 
-A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudflare.com/artifacts/). Agents work at the same time, each in its own fork and with its own short-lived key. Only a person's passkey can promote a change to `main`. The proof of that approval lives in the repository, not on the platform, so any clone can check it with no server, on any host.
+A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudflare.com/artifacts/), built on [Open Integrity](https://github.com/OpenIntegrityProject): validity lives in Git, not in the platform. Agents work at the same time, each in its own fork and with its own short-lived signing key. Only a person's passkey can promote a change to `main`, and it does so by signing the commit itself. Each repository starts with an Open Integrity inception commit and carries its own signer policy, so any clone can check every commit with no server, on any host, and stock `git verify-commit` checks every commit of main.
 
-It asks the question from Tempo's [Human authorization in agentic workflows](https://tempo.xyz/developers/blog/human-authorization-in-agentic-workflows): did an authorized human intend this specific action? Tempo keeps the answer on its server. Here the answer is a signed object in Git, checked against a signer policy committed in the repository and rooted in its first commit.
+The question the forge answers for each change is whether an authorized person intended that specific change. The answer is not a record on the platform. It is a signed object in Git, checked against the signer policy committed in the repository and rooted in its inception commit.
 
 The forge is built on this repository's passkey library and reuses the demo's sign-in as is. The library offers ES256 before EdDSA, because only a P-256 passkey can make the SSH signature that Git checks.
 
@@ -10,10 +10,10 @@ The forge is built on this repository's passkey library and reuses the demo's si
 
 1. **Your passkey signs the first commit.** It is an empty Open Integrity inception commit whose committer is your passkey's SSH key fingerprint, signed as an SSH signature that `git verify-commit` checks. Its hash becomes the repository's id. The next commit, which your passkey also approves, sets the policy and names your passkey as the only promoter.
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. The new rules need your approval too.
-3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. The forge checks every proposal against the rules in the repository.
+3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. Every proposal is checked against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.
 5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree and the message, as an SSH signature that `git verify-commit` checks.
-6. **Anyone checks it anywhere.** A fresh clone, a laptop or a GitHub mirror gives the same answer, with no forge in the loop.
+6. **Anyone checks it anywhere.** A fresh clone on a laptop, or a mirror on any Git host, gives the same answer, with no forge in the loop.
 
 "Play the story" on the page walks through these steps, and stops where your passkey is needed.
 
@@ -31,7 +31,7 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 
 | Rule | Statement |
 | --- | --- |
-| R0 | The first commit of main is the root of trust, and its hash is the repository id. It is an empty commit whose committer is the fingerprint of the passkey that signed it, as an SSH signature. |
+| R0 | The first commit of main is the root of trust, and its hash is the repository id. It is an Open Integrity inception commit: empty, with the fingerprint of the passkey that signed it as its committer, and signed by that passkey as an SSH signature. |
 | R1 | Each later commit of main carries an approval from a promoter in the policy of its first parent: the promoter's passkey signs the whole commit. The commit after the root sets the first policy, and the passkey that signed the root approves it. |
 | R2 | Only a commit of main with such an approval changes `.repo/`. A key that a commit adds has no say over that commit. |
 | R3 | Each other commit that main reaches carries a valid SSH signature from a key in the policy in force when it came in. |
@@ -41,6 +41,12 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 | R7 | Where the policy says `mergesOnly` (new projects do), a commit of main with one parent changes only `.repo/`, so no squash drops the authors' signatures. |
 | R8 | A release tag of a main commit carries approvals of that tag from as many distinct promoters as `releaseApprovals` asks (one when absent). |
 | M | A proposal merges into main with no conflicts (proposals only). |
+
+### policy.json and Open Integrity's signer files
+
+An Open Integrity repository such as [oi-demo](https://github.com/OpenIntegrityProject/oi-demo) keeps its signer policy as three OpenSSH allowed signers files in `.repo/config/verification/`: `allowed_commit_signers` for any commit, `allowed_main_signers` for main's first-parent chain and for changes to those files, and `allowed_tag_signers` for release tags. Its verifier checks each commit against them with `ssh-keygen`, and this repository verifies itself the same way.
+
+The forge keeps its rules in one file, `policy.json`, because it needs facts an allowed signers line cannot hold: a passkey promoter as a WebAuthn credential, the promoter that admitted each agent key, when a key was revoked, `mergesOnly`, and how many approvals a release takes. From it the forge generates `allowed_commit_signers`, so stock Git checks every signature, but it writes no `allowed_main_signers` or `allowed_tag_signers`, and Open Integrity's verifier does not yet pass a forge repository. Writing those two files from the policy, so that one repository passes both verifiers, is the next step.
 
 Each approval can also be read as a Gordian Envelope (the commit sheet shows its `ur:envelope`, and an elided form with the same digest that leaves out the authenticator data and signature); the encoder matches the reference `bc-envelope-cli` byte for byte. For a commit of main the assertion's challenge is the commit itself, so its Envelope is read together with that commit.
 
@@ -94,9 +100,9 @@ It prints each commit with its rules, and exits 0 when all of them pass, 1 when 
 TZ=UTC git -C notes -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
 ```
 
-## The GitHub mirror
+## Mirrors
 
-When the deployment sets `MIRROR_OWNER` and the `GITHUB_TOKEN` secret, the page offers "Mirror to GitHub". It creates the private repository `<owner>/<repo>` if it is not there, sets its `FORGE_REPO_ID` variable, and force-pushes main as the forge holds it. The repository's workflow then fetches the pinned verifier and checks every commit on GitHub's runners. A commit pushed to the mirror by hand fails that check, and mirroring again puts main back. The token needs repository administration (to create the repository and its variable) and contents write access for that owner.
+The verifier reads only the repository, so a mirror on any Git host gives the same answer as the forge. The forge can push one to GitHub itself, and this deployment leaves that off. When a deployment sets `MIRROR_OWNER` and the `GITHUB_TOKEN` secret, the page offers "Mirror to GitHub". It creates the private repository `<owner>/<repo>` if it is not there, sets its `FORGE_REPO_ID` variable, and force-pushes main as the forge holds it. The repository's workflow then fetches the pinned verifier and checks every commit on GitHub's runners. A commit pushed to the mirror by hand fails that check, and mirroring again puts main back. The token needs repository administration (to create the repository and its variable) and contents write access for that owner.
 
 ## Deploy
 
@@ -132,8 +138,6 @@ When the deployment sets `MIRROR_OWNER` and the `GITHUB_TOKEN` secret, the page 
 | `browser/` | The page: stage, history graph, approval and commit sheets, the story, the seal, and the stylesheet. |
 | `scripts/` | `forge-verify.ts`, `smoke.ts`, `subscribe-pushes.ts`, `cleanup-artifacts.ts`, `check-production-bundle.ts`. |
 | `wrangler.jsonc`, `wrangler.local.jsonc` | The deployed configuration, with Artifacts, and the local one, without. `scripts/config.test.ts` keeps them in step. |
-
-The plan, decisions and progress are in [`docs/forge-demo-plan.md`](../../docs/forge-demo-plan.md).
 
 ## License
 
