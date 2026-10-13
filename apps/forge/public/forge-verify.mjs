@@ -19533,94 +19533,6 @@ async function verifyApproval(approval, policy) {
   return { ok: true, promoter: promoter2, payload };
 }
 
-// authority/policy.ts
-var POLICY_PATH = ".repo/config/verification/policy.json";
-var PolicyError = class extends Error {
-};
-function fail(message) {
-  throw new PolicyError(message);
-}
-function text(value, field) {
-  if (typeof value !== "string" || value === "") fail(`${field} must be a non-empty string`);
-  return value;
-}
-function time(value, field) {
-  const t = text(value, field);
-  if (Number.isNaN(Date.parse(t))) fail(`${field} must be an ISO 8601 time`);
-  return t;
-}
-function promoter(value, index2) {
-  const at = `promoters[${index2}]`;
-  if (typeof value !== "object" || value === null) fail(`${at} must be an object`);
-  const id = text(value.id, `${at}.id`);
-  if (value.kind === "webauthn") {
-    if (value.alg !== -7 && value.alg !== -8) fail(`${at}.alg must be -7 or -8`);
-    const jwk = value.publicKey;
-    if (typeof jwk !== "object" || jwk === null || typeof jwk.x !== "string") fail(`${at}.publicKey must be a JWK`);
-    if (value.alg === -7 && (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.y !== "string")) {
-      fail(`${at}.publicKey must be an EC P-256 key`);
-    }
-    if (value.alg === -8 && (jwk.kty !== "OKP" || jwk.crv !== "Ed25519")) fail(`${at}.publicKey must be an Ed25519 key`);
-    return {
-      id,
-      kind: "webauthn",
-      credentialId: text(value.credentialId, `${at}.credentialId`),
-      alg: value.alg,
-      publicKey: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, ...jwk.y === void 0 ? {} : { y: jwk.y } },
-      ...value.label === void 0 ? {} : { label: text(value.label, `${at}.label`) },
-      since: time(value.since, `${at}.since`)
-    };
-  }
-  if (value.kind === "ssh-ed25519") {
-    return { id, kind: "ssh-ed25519", publicKey: text(value.publicKey, `${at}.publicKey`) };
-  }
-  return fail(`${at}.kind must be webauthn or ssh-ed25519`);
-}
-function author(value, index2) {
-  const at = `authors[${index2}]`;
-  if (typeof value !== "object" || value === null) fail(`${at} must be an object`);
-  if (value.kind !== "ssh-ed25519") fail(`${at}.kind must be ssh-ed25519`);
-  return {
-    id: text(value.id, `${at}.id`),
-    kind: "ssh-ed25519",
-    publicKey: text(value.publicKey, `${at}.publicKey`),
-    fingerprint: text(value.fingerprint, `${at}.fingerprint`),
-    controller: text(value.controller, `${at}.controller`),
-    validAfter: time(value.validAfter, `${at}.validAfter`),
-    validBefore: time(value.validBefore, `${at}.validBefore`),
-    ...value.revokedAt === void 0 ? {} : { revokedAt: time(value.revokedAt, `${at}.revokedAt`) }
-  };
-}
-function releaseApprovals(value) {
-  if (!Number.isInteger(value) || value < 1) fail("releaseApprovals must be a whole number of 1 or more");
-  return value;
-}
-function parsePolicy(source) {
-  let value;
-  try {
-    value = JSON.parse(source);
-  } catch {
-    fail("the policy is not JSON");
-  }
-  if (typeof value !== "object" || value === null) fail("the policy must be an object");
-  if (value.version !== 1) fail("version must be 1");
-  const webauthn = value.webauthn;
-  if (typeof webauthn !== "object" || webauthn === null) fail("webauthn must be an object");
-  if (!Array.isArray(value.promoters) || value.promoters.length === 0) fail("promoters must list at least one key");
-  if (!Array.isArray(value.authors)) fail("authors must be a list");
-  const policy = {
-    version: 1,
-    webauthn: { rpId: text(webauthn.rpId, "webauthn.rpId"), origin: text(webauthn.origin, "webauthn.origin") },
-    promoters: value.promoters.map(promoter),
-    authors: value.authors.map(author),
-    ...value.mergesOnly === void 0 ? {} : { mergesOnly: value.mergesOnly === true },
-    ...value.releaseApprovals === void 0 ? {} : { releaseApprovals: releaseApprovals(value.releaseApprovals) }
-  };
-  const ids = [...policy.promoters, ...policy.authors].map((k) => k.id);
-  if (new Set(ids).size !== ids.length) fail("each key id must be unique");
-  return policy;
-}
-
 // authority/sshsig.ts
 var MAGIC = utf8("SSHSIG");
 var KEY_TYPE = "ssh-ed25519";
@@ -19711,7 +19623,165 @@ async function verify(armored, message, namespace = "git") {
   return ok ? { publicKey: parsed.publicKey } : null;
 }
 
+// authority/webauthn-sshsig.ts
+var SK_KEY_TYPE = "sk-ecdsa-sha2-nistp256@openssh.com";
+var WEBAUTHN_SIG_TYPE = "webauthn-sk-ecdsa-sha2-nistp256@openssh.com";
+var FLAG_UP2 = 1;
+var FLAG_UV2 = 4;
+function skPublicKeyBlob(jwk, rpId) {
+  if (jwk.kty !== "EC" || jwk.crv !== "P-256" || !jwk.y) throw new Error("an SSH signature needs a P-256 passkey");
+  const point = concat(new Uint8Array([4]), fromBase64Url(jwk.x), fromBase64Url(jwk.y));
+  return concat(sshString(SK_KEY_TYPE), sshString("nistp256"), sshString(point), sshString(rpId));
+}
+async function blobFingerprint(blob) {
+  return "SHA256:" + toBase64(await sha256(blob)).replace(/=+$/, "");
+}
+function fixed32(value) {
+  let i = 0;
+  while (i < value.length && value[i] === 0) i++;
+  const trimmed = value.slice(i);
+  if (trimmed.length > 32) throw new Error("bad ECDSA signature");
+  const out = new Uint8Array(32);
+  out.set(trimmed, 32 - trimmed.length);
+  return out;
+}
+async function verifyWebauthn(armored, message, namespace = "git") {
+  const no = (reason) => ({ ok: false, reason });
+  try {
+    const text2 = armored.trim();
+    if (!text2.startsWith(BEGIN) || !text2.endsWith(END)) return no("The signature is not an SSH signature.");
+    const reader = new Reader(fromBase64(text2.slice(BEGIN.length, -END.length)));
+    if (!equalBytes(reader.take(6), MAGIC) || reader.uint32() !== 1) return no("The signature is not an SSH signature.");
+    const keyBlob = reader.string();
+    const sigNamespace = reader.text();
+    reader.string();
+    const hash = reader.text();
+    const sig = new Reader(reader.string());
+    if (sigNamespace !== namespace) return no(`The signature is for ${sigNamespace}, not ${namespace}.`);
+    if (hash !== "sha512" && hash !== "sha256") return no("The signature uses an unknown hash.");
+    const key = new Reader(keyBlob);
+    if (key.text() !== SK_KEY_TYPE || key.text() !== "nistp256") return no("The signature is not from a P-256 passkey.");
+    const point = key.string();
+    const rpId = key.text();
+    if (sig.text() !== WEBAUTHN_SIG_TYPE) return no("The signature is not a WebAuthn signature.");
+    const ecdsa = new Reader(sig.string());
+    const r = fixed32(ecdsa.string());
+    const s = fixed32(ecdsa.string());
+    const flags = sig.take(1)[0];
+    const counter = sig.take(4);
+    const origin = sig.text();
+    const clientDataBytes = sig.string();
+    const extensions = sig.string();
+    const bytes = typeof message === "string" ? utf8(message) : message;
+    const digest = hash === "sha512" ? await crypto.subtle.digest("SHA-512", bytes) : await crypto.subtle.digest("SHA-256", bytes);
+    const data = concat(MAGIC, sshString(namespace), sshString(""), sshString(hash), sshString(new Uint8Array(digest)));
+    const clientData = JSON.parse(fromUtf8(clientDataBytes));
+    if (clientData.type !== "webauthn.get") return no("The signature is not a WebAuthn assertion.");
+    if (clientData.challenge !== toBase64Url(data)) return no("The passkey signed a different message.");
+    if (clientData.origin !== origin) return no("The signature names two different origins.");
+    if (!(flags & FLAG_UP2)) return no("The authenticator did not see the person.");
+    if (!(flags & FLAG_UV2)) return no("The authenticator did not verify the person.");
+    const authData = concat(await sha256(rpId), new Uint8Array([flags]), counter, extensions);
+    const signed = concat(authData, await sha256(clientDataBytes));
+    const publicKey = await crypto.subtle.importKey("raw", point, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, concat(r, s), signed);
+    if (!ok) return no("The passkey signature does not verify.");
+    return { ok: true, keyBlob, fingerprint: await blobFingerprint(keyBlob), rpId, origin, flags };
+  } catch {
+    return no("The signature does not decode.");
+  }
+}
+
+// authority/policy.ts
+var POLICY_PATH = ".repo/config/verification/policy.json";
+var PolicyError = class extends Error {
+};
+function fail(message) {
+  throw new PolicyError(message);
+}
+function text(value, field) {
+  if (typeof value !== "string" || value === "") fail(`${field} must be a non-empty string`);
+  return value;
+}
+function time(value, field) {
+  const t = text(value, field);
+  if (Number.isNaN(Date.parse(t))) fail(`${field} must be an ISO 8601 time`);
+  return t;
+}
+function promoter(value, index2) {
+  const at = `promoters[${index2}]`;
+  if (typeof value !== "object" || value === null) fail(`${at} must be an object`);
+  const id = text(value.id, `${at}.id`);
+  if (value.kind === "webauthn") {
+    if (value.alg !== -7 && value.alg !== -8) fail(`${at}.alg must be -7 or -8`);
+    const jwk = value.publicKey;
+    if (typeof jwk !== "object" || jwk === null || typeof jwk.x !== "string") fail(`${at}.publicKey must be a JWK`);
+    if (value.alg === -7 && (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.y !== "string")) {
+      fail(`${at}.publicKey must be an EC P-256 key`);
+    }
+    if (value.alg === -8 && (jwk.kty !== "OKP" || jwk.crv !== "Ed25519")) fail(`${at}.publicKey must be an Ed25519 key`);
+    return {
+      id,
+      kind: "webauthn",
+      credentialId: text(value.credentialId, `${at}.credentialId`),
+      alg: value.alg,
+      publicKey: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, ...jwk.y === void 0 ? {} : { y: jwk.y } },
+      ...value.label === void 0 ? {} : { label: text(value.label, `${at}.label`) },
+      since: time(value.since, `${at}.since`)
+    };
+  }
+  if (value.kind === "ssh-ed25519") {
+    return { id, kind: "ssh-ed25519", publicKey: text(value.publicKey, `${at}.publicKey`) };
+  }
+  return fail(`${at}.kind must be webauthn or ssh-ed25519`);
+}
+function author(value, index2) {
+  const at = `authors[${index2}]`;
+  if (typeof value !== "object" || value === null) fail(`${at} must be an object`);
+  if (value.kind !== "ssh-ed25519") fail(`${at}.kind must be ssh-ed25519`);
+  return {
+    id: text(value.id, `${at}.id`),
+    kind: "ssh-ed25519",
+    publicKey: text(value.publicKey, `${at}.publicKey`),
+    fingerprint: text(value.fingerprint, `${at}.fingerprint`),
+    controller: text(value.controller, `${at}.controller`),
+    validAfter: time(value.validAfter, `${at}.validAfter`),
+    validBefore: time(value.validBefore, `${at}.validBefore`),
+    ...value.revokedAt === void 0 ? {} : { revokedAt: time(value.revokedAt, `${at}.revokedAt`) }
+  };
+}
+function releaseApprovals(value) {
+  if (!Number.isInteger(value) || value < 1) fail("releaseApprovals must be a whole number of 1 or more");
+  return value;
+}
+function parsePolicy(source) {
+  let value;
+  try {
+    value = JSON.parse(source);
+  } catch {
+    fail("the policy is not JSON");
+  }
+  if (typeof value !== "object" || value === null) fail("the policy must be an object");
+  if (value.version !== 1) fail("version must be 1");
+  const webauthn = value.webauthn;
+  if (typeof webauthn !== "object" || webauthn === null) fail("webauthn must be an object");
+  if (!Array.isArray(value.promoters) || value.promoters.length === 0) fail("promoters must list at least one key");
+  if (!Array.isArray(value.authors)) fail("authors must be a list");
+  const policy = {
+    version: 1,
+    webauthn: { rpId: text(webauthn.rpId, "webauthn.rpId"), origin: text(webauthn.origin, "webauthn.origin") },
+    promoters: value.promoters.map(promoter),
+    authors: value.authors.map(author),
+    ...value.mergesOnly === void 0 ? {} : { mergesOnly: value.mergesOnly === true },
+    ...value.releaseApprovals === void 0 ? {} : { releaseApprovals: releaseApprovals(value.releaseApprovals) }
+  };
+  const ids = [...policy.promoters, ...policy.authors].map((k) => k.id);
+  if (new Set(ids).size !== ids.length) fail("each key id must be unique");
+  return policy;
+}
+
 // authority/verify.ts
+var EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 var pass = (rule, reason) => ({ rule, ok: true, reason });
 var fail2 = (rule, reason) => ({ rule, ok: false, reason });
 var short = (oid) => oid.slice(0, 7);
@@ -19811,13 +19881,45 @@ async function checkWork(repo, commit, policy, role) {
     ok: rules.every((r) => r.ok)
   };
 }
-async function checkMain(repo, policies, commit, parent, repoId) {
+async function passkeyInception(commit) {
+  if (!commit.signature) return { ok: false, reason: "The inception commit is not signed." };
+  const check = await verifyWebauthn(commit.signature, commit.payload);
+  if (!check.ok) return { ok: false, reason: check.reason };
+  if (commit.committer.name !== check.fingerprint) {
+    return { ok: false, reason: `The committer is ${commit.committer.name}, not ${check.fingerprint}, the passkey that signed the commit.` };
+  }
+  return { ok: true, key: { fingerprint: check.fingerprint, rpId: check.rpId, origin: check.origin } };
+}
+async function firstPolicy(policies, commit, key) {
+  const own = await policies.at(commit);
+  if ("error" in own) return own;
+  const { policy } = own;
+  if (policy.webauthn.rpId !== key.rpId || policy.webauthn.origin !== key.origin) {
+    return { error: `The first policy names ${policy.webauthn.origin}, but the inception passkey signed at ${key.origin}.` };
+  }
+  for (const p of policy.promoters) {
+    if (p.kind !== "webauthn" || p.alg !== -7) continue;
+    if (await blobFingerprint(skPublicKeyBlob(p.publicKey, key.rpId)) === key.fingerprint) {
+      return { policy: { version: 1, webauthn: policy.webauthn, promoters: [p], authors: [] } };
+    }
+  }
+  return { error: `The first policy lists no promoter with the inception passkey ${key.fingerprint}.` };
+}
+async function checkMain(repo, policies, commit, parent, repoId, inception = null) {
   const rules = [];
   const approval = approvalIn(commit.message);
-  const governing = await policies.at(parent ?? commit);
+  const establishing = parent !== null && inception !== null && parent.parents.length === 0;
+  const governing = establishing ? await firstPolicy(policies, commit, inception) : await policies.at(parent ?? commit);
   let signer = null;
   let action;
-  if (!parent) {
+  if (!parent && commit.parents.length === 0 && commit.tree === EMPTY_TREE) {
+    const check = await passkeyInception(commit);
+    if (!check.ok) rules.push(fail2("R0", check.reason));
+    else {
+      signer = { kind: "promoter", id: null, fingerprint: check.key.fingerprint };
+      rules.push(pass("R0", `Root of trust: an empty commit signed by the passkey ${check.key.fingerprint}, which its committer names. Repository id ${short(commit.oid)}.`));
+    }
+  } else if (!parent) {
     if (commit.parents.length > 0) rules.push(fail2("R0", "The first-parent chain of main does not end at a root commit."));
     else if ("error" in governing) rules.push(fail2("R0", governing.error));
     else if (!approval) rules.push(fail2("R0", "The first commit carries no inception approval."));
@@ -19836,7 +19938,7 @@ async function checkMain(repo, policies, commit, parent, repoId) {
       }
     }
   } else if ("error" in governing) {
-    rules.push(fail2("R1", `The policy of the first parent is not usable. ${governing.error}`));
+    rules.push(fail2("R1", establishing ? governing.error : `The policy of the first parent is not usable. ${governing.error}`));
   } else if (!approval) {
     rules.push(fail2("R1", "Main moved without an approval from a promoter."));
     rules.push(fail2("R4", "There is no approval to match against this commit."));
@@ -19845,7 +19947,12 @@ async function checkMain(repo, policies, commit, parent, repoId) {
     if (!check.ok) rules.push(fail2("R1", check.reason));
     else {
       signer = { kind: "promoter", id: check.promoter.id };
-      rules.push(pass("R1", `Approved by promoter ${check.promoter.id} under the policy of ${short(parent.oid)}.`));
+      rules.push(
+        pass(
+          "R1",
+          establishing ? `Sets the first policy, approved by promoter ${check.promoter.id}, the passkey that signed the inception commit.` : `Approved by promoter ${check.promoter.id} under the policy of ${short(parent.oid)}.`
+        )
+      );
     }
     const p = check.payload;
     if (!p) rules.push(fail2("R4", "The approval payload does not decode."));
@@ -19856,7 +19963,7 @@ async function checkMain(repo, policies, commit, parent, repoId) {
       if (p.ref !== MAIN_REF) wrong.push("ref");
       if (!sameList(p.parents, commit.parents)) wrong.push("parents");
       if (p.tree !== commit.tree) wrong.push("tree");
-      if (p.action === "incept" || p.action === "promote" !== commit.parents.length > 1) wrong.push("action");
+      if (p.action === "incept" !== establishing || !establishing && p.action === "promote" !== commit.parents.length > 1) wrong.push("action");
       if (wrong.length > 0) rules.push(fail2("R4", `The approval names a different ${wrong.join(", ")}.`));
       else rules.push(pass("R4", "The approval names this repository, these parents and this tree."));
     }
@@ -19898,6 +20005,8 @@ async function verifyHistory(repo, head2, options = {}) {
   const repoId = root.oid;
   const commits = [];
   const rootReport = await checkMain(repo, policies, root, null, null);
+  const rootInception = root.tree === EMPTY_TREE && root.parents.length === 0 ? await passkeyInception(root) : null;
+  const inception = rootInception?.ok ? rootInception.key : null;
   if (options.repoId && options.repoId !== repoId) {
     rootReport.rules.push(fail2("R0", `The root is ${short(repoId)}, not the expected repository ${short(options.repoId)}.`));
     rootReport.ok = false;
@@ -19928,7 +20037,7 @@ async function verifyHistory(repo, head2, options = {}) {
         }
       }
     }
-    commits.push(await checkMain(repo, policies, commit, parent, repoId));
+    commits.push(await checkMain(repo, policies, commit, parent, repoId, inception));
     known.add(commit.oid);
     for (const c of await reachable(repo, commit.oid, known)) known.add(c.oid);
   }

@@ -2,10 +2,14 @@
 // signatures on its commits and the approvals in their messages. It needs no
 // server, so it gives the same answer on any clone, on any host.
 //
-// R0  The first commit of main is the root of trust. Its approval verifies
-//     against the promoter key in its own policy. Its id is the repository id.
+// R0  The first commit of main is the root of trust, and its id is the
+//     repository id. It is an empty commit whose committer is the fingerprint
+//     of the passkey that signed it, as an SSH signature that git checks.
+//     (An older form: a commit holding the policy, whose approval verifies
+//     against the promoter key in that policy.)
 // R1  Each later commit of main carries an approval from a promoter in the
-//     policy of its first parent.
+//     policy of its first parent. The commit after an empty root sets the
+//     first policy, and the passkey that signed the root approves it.
 // R2  Only a commit of main with such an approval changes .repo/. A key that a
 //     commit adds has no say over that commit, so a key never authorizes itself.
 // R3  Each other commit that main reaches carries a valid SSH signature from
@@ -39,6 +43,10 @@ import {
 } from "./git.ts";
 import { parsePolicy, POLICY_PATH, type Author, type Policy, type Promoter } from "./policy.ts";
 import { fingerprint, publicKeyText, verify as verifySsh } from "./sshsig.ts";
+import { blobFingerprint, skPublicKeyBlob, verifyWebauthn } from "./webauthn-sshsig.ts";
+
+/** The tree of a commit with no files. */
+export const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 export type RuleId = "R0" | "R1" | "R2" | "R3" | "R4" | "R5" | "R6" | "R7" | "R8" | "M";
 
@@ -224,6 +232,47 @@ async function checkWork(repo: Repo, commit: Commit, policy: Policy, role: Commi
   };
 }
 
+/** The passkey that signed an empty root commit, as R0 checks it. */
+interface InceptionKey {
+  fingerprint: string;
+  rpId: string;
+  origin: string;
+}
+
+type InceptionCheck = { ok: true; key: InceptionKey } | { ok: false; reason: string };
+
+/** R0 for an empty root: a passkey signed it, and its committer is that passkey's fingerprint. */
+async function passkeyInception(commit: Commit): Promise<InceptionCheck> {
+  if (!commit.signature) return { ok: false, reason: "The inception commit is not signed." };
+  const check = await verifyWebauthn(commit.signature, commit.payload);
+  if (!check.ok) return { ok: false, reason: check.reason };
+  if (commit.committer.name !== check.fingerprint) {
+    return { ok: false, reason: `The committer is ${commit.committer.name}, not ${check.fingerprint}, the passkey that signed the commit.` };
+  }
+  return { ok: true, key: { fingerprint: check.fingerprint, rpId: check.rpId, origin: check.origin } };
+}
+
+/**
+ * The policy that governs the commit after an empty root: its own policy,
+ * with only the promoter whose passkey signed the root. That passkey alone
+ * chooses the first rules.
+ */
+async function firstPolicy(policies: Policies, commit: Commit, key: InceptionKey): Promise<PolicyAt> {
+  const own = await policies.at(commit);
+  if ("error" in own) return own;
+  const { policy } = own;
+  if (policy.webauthn.rpId !== key.rpId || policy.webauthn.origin !== key.origin) {
+    return { error: `The first policy names ${policy.webauthn.origin}, but the inception passkey signed at ${key.origin}.` };
+  }
+  for (const p of policy.promoters) {
+    if (p.kind !== "webauthn" || p.alg !== -7) continue;
+    if ((await blobFingerprint(skPublicKeyBlob(p.publicKey, key.rpId))) === key.fingerprint) {
+      return { policy: { version: 1, webauthn: policy.webauthn, promoters: [p], authors: [] } };
+    }
+  }
+  return { error: `The first policy lists no promoter with the inception passkey ${key.fingerprint}.` };
+}
+
 /** R0, or R1, R4 and R2, for a commit on the first-parent chain of main. */
 async function checkMain(
   repo: Repo,
@@ -231,15 +280,25 @@ async function checkMain(
   commit: Commit,
   parent: Commit | null,
   repoId: string | null,
+  inception: InceptionKey | null = null,
 ): Promise<CommitReport> {
   const rules: RuleResult[] = [];
   const approval = approvalIn(commit.message);
-  const governing = await policies.at(parent ?? commit);
+  // The commit after an empty root sets the first policy, under the passkey that signed the root.
+  const establishing = parent !== null && inception !== null && parent.parents.length === 0;
+  const governing = establishing ? await firstPolicy(policies, commit, inception) : await policies.at(parent ?? commit);
   let signer: Signer | null = null;
   let action: ApprovalPayload["action"] | undefined;
 
-  if (!parent) {
-    // The root: its own policy governs it.
+  if (!parent && commit.parents.length === 0 && commit.tree === EMPTY_TREE) {
+    const check = await passkeyInception(commit);
+    if (!check.ok) rules.push(fail("R0", check.reason));
+    else {
+      signer = { kind: "promoter", id: null, fingerprint: check.key.fingerprint };
+      rules.push(pass("R0", `Root of trust: an empty commit signed by the passkey ${check.key.fingerprint}, which its committer names. Repository id ${short(commit.oid)}.`));
+    }
+  } else if (!parent) {
+    // The older root: its own policy governs it.
     if (commit.parents.length > 0) rules.push(fail("R0", "The first-parent chain of main does not end at a root commit."));
     else if ("error" in governing) rules.push(fail("R0", governing.error));
     else if (!approval) rules.push(fail("R0", "The first commit carries no inception approval."));
@@ -258,7 +317,7 @@ async function checkMain(
       }
     }
   } else if ("error" in governing) {
-    rules.push(fail("R1", `The policy of the first parent is not usable. ${governing.error}`));
+    rules.push(fail("R1", establishing ? governing.error : `The policy of the first parent is not usable. ${governing.error}`));
   } else if (!approval) {
     rules.push(fail("R1", "Main moved without an approval from a promoter."));
     rules.push(fail("R4", "There is no approval to match against this commit."));
@@ -267,7 +326,14 @@ async function checkMain(
     if (!check.ok) rules.push(fail("R1", check.reason));
     else {
       signer = { kind: "promoter", id: check.promoter.id };
-      rules.push(pass("R1", `Approved by promoter ${check.promoter.id} under the policy of ${short(parent.oid)}.`));
+      rules.push(
+        pass(
+          "R1",
+          establishing
+            ? `Sets the first policy, approved by promoter ${check.promoter.id}, the passkey that signed the inception commit.`
+            : `Approved by promoter ${check.promoter.id} under the policy of ${short(parent.oid)}.`,
+        ),
+      );
     }
     const p = check.payload;
     if (!p) rules.push(fail("R4", "The approval payload does not decode."));
@@ -278,7 +344,7 @@ async function checkMain(
       if (p.ref !== MAIN_REF) wrong.push("ref");
       if (!sameList(p.parents, commit.parents)) wrong.push("parents");
       if (p.tree !== commit.tree) wrong.push("tree");
-      if (p.action === "incept" || (p.action === "promote") !== commit.parents.length > 1) wrong.push("action");
+      if ((p.action === "incept") !== establishing || (!establishing && (p.action === "promote") !== commit.parents.length > 1)) wrong.push("action");
       if (wrong.length > 0) rules.push(fail("R4", `The approval names a different ${wrong.join(", ")}.`));
       else rules.push(pass("R4", "The approval names this repository, these parents and this tree."));
     }
@@ -329,6 +395,8 @@ export async function verifyHistory(repo: Repo, head: string, options: { repoId?
   const commits: CommitReport[] = [];
 
   const rootReport = await checkMain(repo, policies, root, null, null);
+  const rootInception = root.tree === EMPTY_TREE && root.parents.length === 0 ? await passkeyInception(root) : null;
+  const inception = rootInception?.ok ? rootInception.key : null;
   if (options.repoId && options.repoId !== repoId) {
     rootReport.rules.push(fail("R0", `The root is ${short(repoId)}, not the expected repository ${short(options.repoId)}.`));
     rootReport.ok = false;
@@ -361,7 +429,7 @@ export async function verifyHistory(repo: Repo, head: string, options: { repoId?
         }
       }
     }
-    commits.push(await checkMain(repo, policies, commit, parent, repoId));
+    commits.push(await checkMain(repo, policies, commit, parent, repoId, inception));
     known.add(commit.oid);
     for (const c of await reachable(repo, commit.oid, known)) known.add(c.oid);
   }

@@ -3,7 +3,7 @@
 // tests use them. The verifier does not.
 
 import { encodePayload, MAIN_REF, trailerLine, withTrailer, type Approval, type ApprovalAction, type ApprovalPayload } from "./approval.ts";
-import { commitTree, writeTag, type Identity, type Repo } from "./git.ts";
+import { commitTree, memoryRepo, writeFiles, writeTag, type Identity, type Repo } from "./git.ts";
 import type { Author, Policy } from "./policy.ts";
 import { sign } from "./sshsig.ts";
 
@@ -32,6 +32,29 @@ export function commitApproved(
     message: withTrailer(input.message, input.approval),
     author: input.committer,
   });
+}
+
+/** An empty inception commit: who made it, and its message. Its committer name is the signing key's fingerprint. */
+export interface InceptionInput {
+  author: Identity;
+  committer: Identity;
+  message: string;
+}
+
+/** Write an empty inception commit, signed by `sign`. It does not move a ref. */
+export async function commitInception(repo: Repo, input: InceptionInput, sign: (payload: string) => Promise<string>): Promise<string> {
+  const tree = await writeFiles(repo, {});
+  return commitTree(repo, { tree, parents: [], message: input.message, author: input.author, committer: input.committer, sign });
+}
+
+/** The exact text the key signs for an inception commit: the commit without its signature. */
+export async function inceptionPayload(input: InceptionInput): Promise<string> {
+  let payload = "";
+  await commitInception(await memoryRepo(), input, async (text) => {
+    payload = text;
+    return "-----BEGIN SSH SIGNATURE-----\n-----END SSH SIGNATURE-----\n";
+  });
+  return payload;
 }
 
 /** An author key: the private key, and its entry for the policy. */

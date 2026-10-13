@@ -1,10 +1,17 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import git from "isomorphic-git";
 import { describe, expect, it } from "vitest";
 import { approvalIn, withTrailer } from "../approval.ts";
-import { changeFiles, commitTree, readCommit } from "../git.ts";
+import { changeFiles, commitTree, memoryRepo, readCommit, writeFiles } from "../git.ts";
+import { approvalPayload, commitApproved } from "../make.ts";
+import { skPublicKeyBlob, skPublicKeyText } from "../webauthn-sshsig.ts";
 import { POLICY_PATH, renderPolicy } from "../policy.ts";
 import { verifyHistory, verifyProposal, type CommitReport, type RuleId } from "../verify.ts";
-import { history, T0, testAuthor, who } from "./history.ts";
-import { testPromoter } from "./promoter.ts";
+import { history, passkeyRoot, T0, TEMPLATE, testAuthor, who } from "./history.ts";
+import { ORIGIN, RP_ID, testPromoter } from "./promoter.ts";
 
 function rule(report: CommitReport | undefined, id: RuleId) {
   return report?.rules.find((r) => r.rule === id);
@@ -24,14 +31,68 @@ describe("an honest history", () => {
     const report = await verifyHistory(h.repo, second);
     expect(report.ok, JSON.stringify(report.commits.filter((c) => !c.ok), null, 1)).toBe(true);
     expect(report.repoId).toBe(h.repoId);
-    expect(report.commits.map((c) => c.role)).toEqual(["inception", "main", "merged", "main", "merged", "main"]);
-    expect(rule(report.commits[2], "R3")?.reason).toContain("author ada");
+    expect(report.commits.map((c) => c.role)).toEqual(["inception", "main", "main", "merged", "main", "merged", "main"]);
+    expect(rule(report.commits[3], "R3")?.reason).toContain("author ada");
+    expect(rule(report.commits[0], "R0")?.reason).toContain("an empty commit signed by the passkey SHA256:");
+    expect(rule(report.commits[1], "R1")?.reason).toContain("the passkey that signed the inception commit");
+  });
+
+  it("verifies a history whose root holds the policy, the older form", async () => {
+    const h = await history({ olderRoot: true });
+    const report = await verifyHistory(h.repo, h.admitted);
+    expect(report.ok, report.summary).toBe(true);
+    expect(report.commits.map((c) => c.role)).toEqual(["inception", "main"]);
+  });
+});
+
+describe("a passkey inception", () => {
+  it("is a commit git verify-commit accepts with the passkey in allowed signers", async () => {
+    const h = await history();
+    const raw = new TextDecoder().decode((await git.readObject({ ...h.repo, oid: h.repoId, format: "content" })).object as Uint8Array);
+    const dir = mkdtempSync(join(tmpdir(), "forge-inception-"));
+    execFileSync("git", ["init", "-q", dir]);
+    const oid = execFileSync("git", ["-C", dir, "hash-object", "-t", "commit", "-w", "--stdin"], { input: raw }).toString().trim();
+    expect(oid).toBe(h.repoId);
+    const blob = skPublicKeyBlob(h.leo.entry.publicKey, RP_ID);
+    writeFileSync(join(dir, "allowed"), `leo@forge.invalid namespaces="git" ${skPublicKeyText(blob)}\n`);
+    // verify-commit exits non-zero, and execFileSync throws, unless the signature is good.
+    execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "verify-commit", oid], { stdio: "pipe" });
+    const status = execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "log", "-1", "--format=%G?", oid]).toString().trim();
+    expect(status).toBe("G");
+  });
+
+  it("R0: a committer that is not the signing passkey's fingerprint fails", async () => {
+    const repo = await memoryRepo();
+    const root = await passkeyRoot(repo, await testPromoter(), { committer: "SHA256:somebodyelse" });
+    const report = await verifyHistory(repo, root);
+    expect(rule(report.commits[0], "R0")).toMatchObject({ ok: false });
+    expect(rule(report.commits[0], "R0")?.reason).toContain("not SHA256:");
+  });
+
+  it("R0: a passkey signature without user verification fails", async () => {
+    const repo = await memoryRepo();
+    const root = await passkeyRoot(repo, await testPromoter(), { tamper: { userUnverified: true } });
+    const report = await verifyHistory(repo, root);
+    expect(rule(report.commits[0], "R0")).toEqual({ rule: "R0", ok: false, reason: "The authenticator did not verify the person." });
+  });
+
+  it("R1: a first policy that names another promoter fails", async () => {
+    const h = await history();
+    const mallory = await testPromoter("mallory");
+    const policy = { version: 1 as const, webauthn: { rpId: RP_ID, origin: ORIGIN }, promoters: [mallory.entry], authors: [] };
+    const tree = await writeFiles(h.repo, { ...TEMPLATE, [POLICY_PATH]: renderPolicy(policy) });
+    const p = approvalPayload({ repo: h.repoId, action: "incept", parents: [h.repoId], tree, summary: "Mallory takes over", at: T0 });
+    const taken = await commitApproved(h.repo, { payload: p.payload, approval: await mallory.approve(p.bytes), message: "Take over\n", committer: who("M", T0) });
+    const report = await verifyHistory(h.repo, taken);
+    expect(rule(report.commits[0], "R0")?.ok).toBe(true);
+    expect(rule(report.commits[1], "R1")).toMatchObject({ ok: false });
+    expect(rule(report.commits[1], "R1")?.reason).toContain("lists no promoter with the inception passkey");
   });
 });
 
 describe("each rule", () => {
   it("R0: a root whose approval comes from a key not in its own policy fails", async () => {
-    const h = await history();
+    const h = await history({ olderRoot: true });
     const mallory = await testPromoter("mallory");
     const root = await readCommit(h.repo, h.repoId);
     const approval = await mallory.approve(new Uint8Array([1]));

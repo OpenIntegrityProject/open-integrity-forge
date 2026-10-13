@@ -69,7 +69,9 @@ describe("passkey keys in OpenSSH form", () => {
       // ssh-keygen reads the whole file, passkey lines included, and checks an agent's signature with it.
       const ada = await testAuthor("ada", Date.now() - 60_000, Date.now() + 3600_000);
       const file = allowedSigners({ ...valid, promoters: [leo.entry], authors: [ada.entry] });
-      expect(file).toContain(`leo namespaces="forge-approval" ${line}`);
+      // A P-256 passkey is listed as the security key it signs Git commits with; an Ed25519 one cannot sign them.
+      if (algorithm === "ES256") expect(file).toMatch(/^leo namespaces="git" sk-ecdsa-sha2-nistp256@openssh\.com AAAA/m);
+      else expect(file).toContain(`leo namespaces="forge-approval" ${line}`);
       writeFileSync(join(dir, "allowed"), file);
       const message = "a commit payload\n";
       writeFileSync(join(dir, "msg.sig"), await sign(message, ada.privateKey, ada.publicKey));

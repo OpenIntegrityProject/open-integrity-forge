@@ -3,6 +3,7 @@
 // policy of its first parent, so a commit cannot change the rules it obeys.
 
 import { concat, fromBase64Url, toBase64, utf8 } from "./bytes.ts";
+import { skPublicKeyBlob, skPublicKeyText } from "./webauthn-sshsig.ts";
 
 export const POLICY_PATH = ".repo/config/verification/policy.json";
 export const ALLOWED_SIGNERS_PATH = ".repo/config/verification/allowed_commit_signers";
@@ -212,18 +213,20 @@ export function sshPublicKeyOfJwk(jwk: PublicJwk): string {
 /**
  * The SSH keys of the policy in OpenSSH allowed signers format. Point
  * `gpg.ssh.allowedSignersFile` at it, and `git verify-commit` checks the
- * author signatures. This file gives R3 and R5 only. The other rules
- * need the forge verifier.
+ * author signatures and a P-256 passkey's signature of the inception commit.
+ * This file gives R3 and R5 only. The other rules need the forge verifier.
  */
 export function allowedSigners(policy: Policy): string {
   const lines = [
     "# Generated from policy.json. The forge verifier reads policy.json, not this file.",
-    "# Promoters approve with a passkey assertion in a commit trailer, which git does not check.",
-    "# Their keys are listed in OpenSSH form so that this file names every key the policy trusts.",
+    "# A P-256 passkey promoter is listed as the OpenSSH security key it signs Git commits with.",
+    "# Its approvals in commit trailers are WebAuthn assertions, which git does not check.",
   ];
   for (const p of policy.promoters) {
-    if (p.kind === "ssh-ed25519") lines.push(`${p.id} namespaces="git" ${p.publicKey}`);
-    else lines.push(`${p.id.replace(/\s+/g, "_")} namespaces="forge-approval" ${sshPublicKeyOfJwk(p.publicKey)}`);
+    const id = p.id.replace(/\s+/g, "_");
+    if (p.kind === "ssh-ed25519") lines.push(`${id} namespaces="git" ${p.publicKey}`);
+    else if (p.alg === -7) lines.push(`${id} namespaces="git" ${skPublicKeyText(skPublicKeyBlob(p.publicKey, policy.webauthn.rpId))}`);
+    else lines.push(`${id} namespaces="forge-approval" ${sshPublicKeyOfJwk(p.publicKey)}`);
   }
   for (const a of policy.authors) {
     // A revoked key's window ends at its revocation, so git checks R6 too.

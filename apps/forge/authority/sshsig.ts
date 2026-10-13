@@ -4,24 +4,24 @@
 
 import { concat, equalBytes, fromBase64, fromUtf8, sha256, sha512, toBase64, utf8 } from "./bytes.ts";
 
-const MAGIC = utf8("SSHSIG");
+export const MAGIC = utf8("SSHSIG");
 const KEY_TYPE = "ssh-ed25519";
 const HASH = "sha512";
-const BEGIN = "-----BEGIN SSH SIGNATURE-----";
-const END = "-----END SSH SIGNATURE-----";
+export const BEGIN = "-----BEGIN SSH SIGNATURE-----";
+export const END = "-----END SSH SIGNATURE-----";
 
-function uint32(n: number): Uint8Array {
+export function uint32(n: number): Uint8Array {
   return new Uint8Array([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
 }
 
 /** An SSH wire string: a 32-bit length, then the bytes. */
-function sshString(data: Uint8Array | string): Uint8Array {
+export function sshString(data: Uint8Array | string): Uint8Array {
   const bytes = typeof data === "string" ? utf8(data) : data;
   return concat(uint32(bytes.length), bytes);
 }
 
 // Plain fields, not parameter properties, so that Node can strip the types.
-class Reader {
+export class Reader {
   private offset = 0;
   private readonly bytes: Uint8Array;
 
@@ -86,11 +86,11 @@ export async function fingerprint(raw: Uint8Array): Promise<string> {
 }
 
 /** The bytes the key signs: the magic, the namespace, the hash name and the message digest. */
-async function signedData(namespace: string, message: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
+export async function signedData(namespace: string, message: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
   return concat(MAGIC, sshString(namespace), sshString(""), sshString(HASH), sshString(await sha512(message)));
 }
 
-function armor(blob: Uint8Array): string {
+export function armor(blob: Uint8Array): string {
   const body = toBase64(blob).match(/.{1,70}/g)!.join("\n");
   return `${BEGIN}\n${body}\n${END}\n`;
 }
