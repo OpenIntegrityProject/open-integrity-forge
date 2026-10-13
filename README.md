@@ -9,7 +9,7 @@ Open Integrity Forge moves that authority out of the platform and into the repos
 - Every repository starts with a **signed first commit**, its root of trust. Its hash is the repository's id.
 - The rules for who may sign what are **files committed in the repository**, and each commit is judged by the rules in force *before* it, so a key can never authorize itself.
 - Agents work **at the same time, each in its own fork**, each signing with its **own key that lasts an hour**. They can write, sign and propose freely. They cannot merge.
-- A change reaches `main` only when **a person approves that exact change** with a passkey: both parents and the resulting tree.
+- A change reaches `main` only when **a person signs that exact commit** with a passkey: both parents, the resulting tree and the message, as an ordinary Git SSH signature.
 - **Anyone with a clone can check the whole history, on any host, with no forge in the loop.** Cloudflare hosts the repositories and GitHub can mirror them; neither can make a commit valid.
 
 It runs on [Cloudflare Workers](https://developers.cloudflare.com/workers/), [Durable Objects](https://developers.cloudflare.com/durable-objects/), [Queues](https://developers.cloudflare.com/queues/) and [Artifacts](https://developers.cloudflare.com/artifacts/). It is part of the [Open Integrity Project](https://github.com/OpenIntegrityProject), a [Blockchain Commons](https://www.blockchaincommons.com) project.
@@ -22,7 +22,7 @@ It runs on [Cloudflare Workers](https://developers.cloudflare.com/workers/), [Du
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. Changing the rules needs your approval too.
 3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. Artifacts push events reach a Queue, and the forge checks every proposal against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.
-5. **You promote Ada's change.** Your passkey approves the exact merge, and the approval is stored in the commit.
+5. **You promote Ada's change.** Your passkey signs the exact merge commit, and `git verify-commit` checks that signature.
 6. **Anyone checks it anywhere.** A fresh clone, a laptop or a GitHub mirror gives the same answer.
 
 The page also lets you revoke an agent's key, release `main` as a tag that carries your approval, make two agents conflict and redo the loser on the new `main`, push signed work from your own laptop, and, where the deployment has an Anthropic API key, ask an agent to write a note with Claude. Every one of these is checked by the same rules.
@@ -44,7 +44,7 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 | R8 | A release tag of a main commit carries approvals of that tag from as many distinct promoters as `releaseApprovals` asks. |
 | M | A proposal merges into main with no conflicts (proposals only). |
 
-An approval is a WebAuthn assertion whose challenge is the SHA-256 digest of a payload naming the repository, the ref, the parents and the tree. It is stored in the commit message as a `Forge-Approval` trailer, and can also be read as a [Gordian Envelope](https://developer.blockchaincommons.com/envelope/).
+A promoter approves a change of `main` by signing the commit itself: a WebAuthn assertion whose challenge is the commit's SSHSIG data, stored as the commit's SSH signature in OpenSSH's `webauthn-sk-ecdsa-sha2-nistp256@openssh.com` format. The commit message ends with a `Forge-Approval` trailer naming the repository, the ref, the parents and the tree, which the signature covers. A release tag carries its approvals in its message instead. Each approval can also be read as a [Gordian Envelope](https://developer.blockchaincommons.com/envelope/).
 
 ## Check a repository with no forge
 
@@ -57,13 +57,13 @@ shasum -a 256 forge-verify.mjs          # must match the digest the repository p
 node forge-verify.mjs notes --repo <the id of the first commit>
 ```
 
-It needs Node 22 or later, prints each commit with its rules, and exits 0 when all pass. Git alone checks the agents' signatures:
+It needs Node 22 or later, prints each commit with its rules, and exits 0 when all pass. Git alone checks every signature:
 
 ```sh
-git -C notes -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
+TZ=UTC git -C notes -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
 ```
 
-Stock Git checks the agents' commits, which carry ordinary SSH signatures. The promotions on `main` carry passkey approvals in a trailer, which only `forge-verify` reads today; see "What this does not do yet".
+Stock Git checks every commit: the agents' commits carry ordinary SSH signatures, and each commit of `main` carries the passkey's signature, listed in `allowed_commit_signers` as the OpenSSH security key it signs with. Run it with `TZ=UTC`, since under daylight saving time Git on macOS checks a key's window an hour late. `forge-verify` adds what Git cannot: the policy of each commit's parent, key windows and revocation, and release approvals.
 
 ## Run it locally
 
@@ -78,9 +78,10 @@ Open http://localhost:8787, register with a passkey and create a project. Browse
 
 ## What this does not do yet
 
-- **Promotions are not yet Git signatures.** A passkey can produce a WebAuthn signature that stock OpenSSH verifies as an SSH signature ([experiments/webauthn-sshsig/](experiments/webauthn-sshsig/)), so the next step is to store the approval as the merge commit's own signature, letting `git verify-commit` check every commit on `main`. A real browser ceremony in that format is still to be run.
+- **Open Integrity's own verifier does not yet pass a forge repository.** The forge keeps its rules in `policy.json` and generates `allowed_commit_signers` from it, but not `allowed_main_signers` or `allowed_tag_signers`; writing those from the policy is the next step.
+- **The page trusts the forge for the challenge.** The passkey signs the challenge the forge sends; the page does not yet rebuild the commit and check it against the change it shows.
 - **User verification is not enforced for passkey signatures in Git.** OpenSSH's `allowed_signers` has no `verify-required` option, so a passkey signature without user verification would be accepted like one with it.
-- **An approval binds the repository, ref, parents and tree, not the commit message or author fields.** The platform could reword a promotion's message without breaking its approval.
+- **A release approval binds the repository, ref, commit and tree, not the tag message.** A commit of `main` is signed as a whole, message and author included.
 - **Signer times can be backdated.** Key windows and revocation are judged by the committer time, which the signer writes; short windows limit this, and a trusted timestamp would close it.
 - **One promoter per project.** The policy and the verifier accept several, and releases that need more than one approval; the page collects one approval per change.
 - **The agents are scripted**, so the demo runs the same way each time, apart from the optional note written with Claude. A signature proves which key signed, not which model produced the change.
