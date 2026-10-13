@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Passkey inception</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+  button { font: inherit; padding: .5rem 1rem; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; white-space: pre-wrap; }
+</style>
+<h1>Passkey inception</h1>
+<p>One passkey ceremony signs an empty Open Integrity inception commit. The server stores the assertion as the commit's SSH signature, then runs <code>ssh-keygen -Y verify</code> and <code>git verify-commit</code>.</p>
+<button id="go">Create a passkey and sign</button>
+<pre id="log"></pre>
+<script>
+const log = (t) => { document.getElementById("log").textContent += t + "\n"; };
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (t) => Uint8Array.from(atob(t.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - t.length % 4) % 4)), (c) => c.charCodeAt(0));
+const post = async (path, body) => {
+  const r = await fetch(path, { method: "POST", body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error);
+  return j;
+};
+document.getElementById("go").onclick = async () => {
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      rp: { id: "localhost", name: "Passkey inception" },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: "inception", displayName: "Inception signer" },
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+      authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+    } });
+    log("passkey created");
+    const reg = await post("/register", {
+      credentialId: b64u(cred.rawId),
+      publicKey: b64u(cred.response.getPublicKey()),
+      alg: cred.response.getPublicKeyAlgorithm(),
+    });
+    log("committer " + reg.fingerprint);
+    const a = await navigator.credentials.get({ publicKey: {
+      rpId: "localhost",
+      challenge: unb64u(reg.challenge),
+      allowCredentials: [{ type: "public-key", id: unb64u(reg.credentialId) }],
+      userVerification: "required",
+    } });
+    log("assertion made");
+    const res = await post("/sign", {
+      authenticatorData: b64u(a.response.authenticatorData),
+      clientDataJSON: b64u(a.response.clientDataJSON),
+      signature: b64u(a.response.signature),
+    });
+    log(JSON.stringify(res, null, 2));
+  } catch (e) { log("failed: " + e); }
+};
+</script>

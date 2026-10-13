@@ -1,0 +1,9 @@
+tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author Christopher Allen <ChristopherA@LifeWithAlacrity.com> 1791853988 +0000
+committer SHA256:qVxo94Wikj5Kb4G7AWqwDs6ouTYOrXMjD138JaulmIY <ChristopherA@LifeWithAlacrity.com> 1791853988 +0000
+
+Initialize repository and establish a SHA-1 root of trust
+
+Signed with a passkey through a WebAuthn assertion.
+
+Signed-off-by: SHA256:qVxo94Wikj5Kb4G7AWqwDs6ouTYOrXMjD138JaulmIY <ChristopherA@LifeWithAlacrity.com>

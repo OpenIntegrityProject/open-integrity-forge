@@ -1,0 +1,8 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // The module runs in Workers, Node and Bun. The tests also import the library's software authenticator.
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": ["."]
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "passkey-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-15",
+  "routes": [{ "pattern": "passkeydemo.gordianstack.com", "custom_domain": true }],
+  "workers_dev": false,
+  // Bundles browser/app.ts into public/app.js before dev and deploy.
+  "build": { "command": "npm run build:browser", "watch_dir": "browser" },
+  "assets": {
+    "directory": "public",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/auth/*", "/me", "/me/*", "/operator/*"]
+  },
+  "vars": {
+    "RP_ID": "passkeydemo.gordianstack.com",
+    "RP_NAME": "Gordian Stack passkey demo",
+    "ORIGIN": "https://passkeydemo.gordianstack.com",
+    "REFUSAL_FLOOR_MS": "800"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "IDENTITY_RECORDS", "class_name": "IdentityRecord" },
+      { "name": "CREDENTIAL_INDEX", "class_name": "CredentialIndex" },
+      { "name": "CHALLENGES", "class_name": "ChallengeStore" },
+      { "name": "MEMBER_NAMES", "class_name": "MemberNameRegistry" },
+      { "name": "CREDENTIAL_LABELS", "class_name": "CredentialLabels" },
+      { "name": "RATE_LIMITS", "class_name": "RateLimiter" },
+      { "name": "CEREMONY_FAILURES", "class_name": "CeremonyFailures" },
+      { "name": "OPERATOR_LOG", "class_name": "OperatorLog" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "IdentityRecord",
+        "CredentialIndex",
+        "ChallengeStore",
+        "MemberNameRegistry",
+        "CredentialLabels",
+        "RateLimiter",
+        "CeremonyFailures",
+        "OperatorLog"
+      ]
+    }
+  ],
+  "observability": { "enabled": true }
+}

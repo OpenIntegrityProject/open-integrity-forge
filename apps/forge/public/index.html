@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Open Integrity Forge Demo</title>
+    <meta name="description" content="A Git forge where agents sign their work and only a person's passkey promotes it, with the proof kept in the repository." />
+    <link rel="stylesheet" href="/forge.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to the content</a>
+    <header class="app-bar">
+      <a class="wordmark" href="/" aria-label="Open Integrity Forge Demo, home">Open Integrity Forge Demo</a>
+      <div id="project-switch" class="project-switch" hidden>
+        <label for="project-select" class="visually-hidden">Project</label>
+        <select id="project-select"></select>
+      </div>
+      <span id="signed-in" hidden>
+        <button id="play-story" class="story-button" type="button" hidden>Play the story</button>
+        <button id="promoter-badge" class="promoter-badge" type="button" data-passkey="on" aria-describedby="promoter-badge-text">
+          <span id="promoter-badge-seal" aria-hidden="true"></span>
+          <span id="promoter-badge-text"></span>
+        </button>
+        <strong id="member-name"></strong>
+        <span class="app-bar-actions">
+          <button id="open-settings" type="button">Settings</button>
+          <button id="logout" type="button">Log out</button>
+        </span>
+      </span>
+      <button id="open-sign-in" class="primary" type="button" hidden>Sign in</button>
+    </header>
+
+    <main id="main">
+      <p id="status" class="toast" role="status" aria-live="polite"></p>
+
+      <section id="app-signed-out" class="hero" hidden>
+        <div id="hero-seal" class="hero-seal" aria-hidden="true"></div>
+        <div class="hero-text">
+          <h1>Agents may write. Only a person may promote.</h1>
+          <ul class="hero-lines">
+            <li>Each agent signs its work in a fork of its own, with a key that lasts an hour.</li>
+            <li>Main moves only when your passkey approves that exact change, and the approval is stored in the commit.</li>
+            <li>The rules live in the repository, so any clone can check them without this site.</li>
+          </ul>
+          <button id="hero-sign-in" class="primary hero-action" type="button">Sign in with a passkey</button>
+        </div>
+      </section>
+
+      <section id="app-signed-in" hidden>
+        <section id="start" class="start" hidden aria-labelledby="start-title">
+          <div class="start-main">
+          <h1 id="start-title">Start a project</h1>
+          <div id="promoter-state" class="promoter-state"></div>
+          <form id="create-form" class="create-form">
+            <label for="project-name">Project name</label>
+            <div class="create-row">
+              <input id="project-name" name="name" value="gordian-notes" required maxlength="40" autocomplete="off" />
+              <button id="create-project" class="primary seal-button" type="submit" data-passkey="on">Create with passkey</button>
+            </div>
+            <p class="muted small">The project starts with a small notes repository. Your passkey becomes its only promoter, and approving the first commit makes it the repository's root of trust.</p>
+          </form>
+          <div id="project-list"></div>
+          <p><button id="start-story" class="story-button" type="button">Play the story</button> <span class="muted small">It walks through every step and stops where your passkey is needed.</span></p>
+          </div>
+          <aside class="next" aria-labelledby="next-title">
+            <h2 id="next-title">What happens next</h2>
+            <ol>
+              <li><strong>Your passkey approves the first commit.</strong> Its hash becomes the repository's id, and the rules in it name your passkey as the only promoter.</li>
+              <li><strong>You admit two agents.</strong> Each gets an SSH key for an hour and a fork of its own. Changing the rules needs your approval too.</li>
+              <li><strong>The agents work at the same time.</strong> Each signs its commits and proposes them. The forge checks every proposal against the rules.</li>
+              <li><strong>You promote what you accept.</strong> Your passkey approves the exact merge: both parents and the resulting tree.</li>
+              <li><strong>Anyone checks it anywhere.</strong> A fresh clone, a laptop or GitHub gives the same answer, with no forge in the loop.</li>
+            </ol>
+          </aside>
+        </section>
+
+        <section id="stage" class="stage" hidden>
+          <aside id="story" class="story" aria-live="polite" hidden></aside>
+
+          <section id="history" class="band" aria-labelledby="history-title">
+            <header class="band-head">
+              <h2 id="history-title">History</h2>
+              <p id="repo-meta" class="repo-meta small"></p>
+            </header>
+            <div id="graph" class="graph-scroll" tabindex="-1"></div>
+            <div id="release-form" class="release-form"></div>
+          </section>
+
+          <div class="regions">
+            <section id="rules" class="region" aria-labelledby="rules-title">
+              <h2 id="rules-title">Rules in the repository</h2>
+              <div id="rules-body"></div>
+            </section>
+            <section id="agents" class="region" aria-labelledby="agents-title">
+              <h2 id="agents-title">Agents</h2>
+              <div id="agents-body"></div>
+            </section>
+            <section id="proposals" class="region" aria-labelledby="proposals-title">
+              <h2 id="proposals-title">Proposals</h2>
+              <div id="proposals-body"></div>
+            </section>
+          </div>
+
+          <section id="outside" class="outside" aria-labelledby="outside-title">
+            <h2 id="outside-title">Check it outside the forge</h2>
+            <p class="muted">The verifier reads only the repository. It gives the same answer here, on a fresh clone, on GitHub, or on your laptop.</p>
+            <div id="outside-body"></div>
+          </section>
+
+          <p class="stage-foot"><button id="reset" class="danger" type="button" data-passkey="on">Delete this project</button></p>
+        </section>
+      </section>
+    </main>
+
+    <footer class="site-foot small">
+      <p>A demo of <a href="https://github.com/OpenIntegrityProject">Open Integrity</a> from the Open Integrity Project and <a href="https://www.blockchaincommons.com/">Blockchain Commons</a>. Christopher Allen: architecture and passkey-cloudflare. Leonardo Custodio: demo. <a href="https://github.com/OpenIntegrityProject/open-integrity-forge">Source</a></p>
+    </footer>
+
+    <dialog id="approval" class="sheet" aria-labelledby="approval-title">
+      <div id="approval-body"></div>
+    </dialog>
+
+    <dialog id="commit" class="sheet sheet-wide" aria-labelledby="commit-title">
+      <div class="pane-header"><span></span><button id="commit-close" class="close" type="button" aria-label="Close">&times;</button></div>
+      <div id="commit-body"></div>
+    </dialog>
+
+    <dialog id="sign-in" aria-labelledby="sign-in-title">
+      <div class="pane-header">
+      <h2 id="sign-in-title">Sign in</h2>
+      <button class="close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p id="sign-in-status" role="status" aria-live="polite"></p>
+      <section id="entry" hidden>
+        <button class="primary" id="continue" type="button" autofocus>Continue with passkey</button>
+        <div id="choices" hidden>
+          <p id="choices-reason"></p>
+          <form id="register-form">
+            <h3>New here? Register</h3>
+            <label>
+              Member name
+              <input id="register-name" name="memberName" autocomplete="username" required />
+            </label>
+            <button id="name-rules-toggle" class="info-toggle" type="button" aria-label="About member names" aria-expanded="false" aria-controls="name-rules">&#9432;</button>
+            <p id="name-rules" hidden></p>
+            <span id="name-availability" aria-live="polite"></span>
+            <p id="capital-nudge" aria-live="polite" hidden></p>
+            <button class="primary" type="submit">Register with a passkey</button>
+          </form>
+          <form id="recover-form">
+            <h3>Lost your passkeys? Recover</h3>
+            <label>
+              Member name
+              <input name="memberName" autocomplete="username" required />
+            </label>
+            <label>
+              Recovery code
+              <input name="code" autocomplete="off" spellcheck="false" required />
+            </label>
+            <button class="primary" type="submit">Recover with a new passkey</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="rebind" hidden>
+        <h3>Set up a new passkey</h3>
+        <p>An operator created this link for you. It works once.</p>
+        <button class="primary" id="rebind-button" type="button" autofocus>Create a passkey</button>
+      </section>
+    </dialog>
+
+    <dialog id="codes" aria-labelledby="codes-title">
+      <h2 id="codes-title">Your recovery codes</h2>
+      <p id="codes-status" role="status" aria-live="polite"></p>
+      <p>Store these somewhere safe. Each works once, and they will not be shown again.</p>
+      <p id="codes-header"></p>
+      <ol id="code-list"></ol>
+      <button id="codes-copy" type="button">Copy</button>
+      <button id="codes-toggle" type="button">Show as words</button>
+      <label>
+        <input id="codes-saved" type="checkbox" />
+        I have saved my recovery codes
+      </label>
+      <button class="primary" id="codes-done" type="button" disabled>Continue</button>
+    </dialog>
+
+    <dialog id="settings" aria-labelledby="settings-title">
+      <div class="pane-header">
+      <h2 id="settings-title">Settings</h2>
+      <button class="close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p id="settings-status" role="status" aria-live="polite"></p>
+      <p id="rotate-prompt" class="notice" hidden>
+        <span id="rotate-message"></span>
+        <button id="rotate-now" type="button">Replace them now</button>
+      </p>
+
+      <div class="section-heading">
+        <h3>Passkeys</h3>
+        <button id="passkeys-info-toggle" class="info-toggle" type="button" aria-label="About passkeys" aria-expanded="false" aria-controls="passkeys-info">&#9432;</button>
+      </div>
+      <p id="passkeys-info" hidden>Held by is the password manager or security key that stores the passkey, when it can be identified. Synced means that manager can copy the passkey to your other devices. Revoking a passkey stops it signing in, though sessions it already started stay open, and you can't revoke your only one.</p>
+      <table>
+        <thead><tr><th>Label</th><th>Held by</th><th>Synced</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+        <tbody id="credential-rows"></tbody>
+      </table>
+      <p id="device-bound-notice" class="notice" hidden>Each of your passkeys is held on one device and can't be copied to another. If you lose that device, only a recovery code gets you back in. Add a passkey on another device or a security key, and keep your recovery codes somewhere safe.</p>
+      <div class="button-row" role="group" aria-labelledby="add-passkey-label">
+        <span id="add-passkey-label">Add a passkey on:</span>
+        <button id="add-passkey-client-device" type="button">This device</button>
+        <button id="add-passkey-hybrid" type="button">Another device</button>
+        <button id="add-passkey-security-key" type="button">Security key</button>
+      </div>
+
+      <div class="section-heading">
+        <h3>Recovery codes</h3>
+        <button id="codes-info-toggle" class="info-toggle" type="button" aria-label="About recovery codes" aria-expanded="false" aria-controls="codes-info">&#9432;</button>
+      </div>
+      <p id="codes-info" hidden>Recovery codes let you add a new passkey if you lose all of yours, and each one works once. Replacing them gives you a fresh set of 8, shown only once, and every old code stops working straight away, including copies kept elsewhere or split into shares.</p>
+      <button id="rotate-codes" type="button">Replace my recovery codes</button>
+
+      <div class="section-heading">
+        <h3>Sessions</h3>
+        <button id="sessions-info-toggle" class="info-toggle" type="button" aria-label="About sessions" aria-expanded="false" aria-controls="sessions-info">&#9432;</button>
+      </div>
+      <p id="sessions-info" hidden>A session keeps one browser signed in for 7 days. Log out ends this one, and Log out everywhere ends all of them, this one included. Log out everywhere else keeps this one and asks for your passkey first, so someone holding a stolen session can't shut you out.</p>
+      <details id="account-details">
+        <summary>Account details</summary>
+        <p>
+          Record id: <code id="record-id"></code>
+          <button id="copy-record-id" type="button" aria-label="Copy record id">Copy</button>
+          <button id="record-id-info-toggle" class="info-toggle" type="button" aria-label="About the record id" aria-expanded="false" aria-controls="record-id-info">&#9432;</button>
+        </p>
+        <p id="record-id-info" hidden>Your record id names your identity record and never changes, even if every passkey and code does. It isn't secret. To make yourself an operator on your own deployment, add it to the OPERATOR_RECORD_IDS secret.</p>
+        <table>
+          <thead><tr><th>Browser</th><th>Started</th><th>Ends</th></tr></thead>
+          <tbody id="session-rows"></tbody>
+        </table>
+        <div class="button-row">
+          <button id="logout-everywhere" type="button">Log out everywhere</button>
+          <button id="logout-elsewhere" type="button">Log out everywhere else</button>
+        </div>
+      </details>
+
+      <!-- The forge has no operator tools; the settings pane still reads this element. -->
+      <section id="operator" hidden></section>
+    </dialog>
+  </body>
+</html>

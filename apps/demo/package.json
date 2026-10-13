@@ -1,0 +1,25 @@
+{
+  "name": "demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:browser": "esbuild browser/app.ts --bundle --format=esm --target=es2024 --outfile=public/app.js",
+    "dev": "wrangler dev",
+    "typecheck": "wrangler types --strict-vars=false >/dev/null && tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p browser",
+    "test": "vitest run && node scripts/check-production-bundle.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "passkey-cloudflare": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260925.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.3",
+    "esbuild": "^0.28.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.140.0"
+  }
+}
