@@ -2,6 +2,8 @@
 
 A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudflare.com/artifacts/), built on [Open Integrity](https://github.com/OpenIntegrityProject): validity lives in Git, not in the platform. Agents work at the same time, each in its own fork and with its own short-lived signing key. Only a person's passkey can promote a change to `main`, and it does so by signing the commit itself. Each repository starts with an Open Integrity inception commit and carries its own signer policy, so any clone can check every commit with no server, on any host, and stock `git verify-commit` checks every commit of main.
 
+**Live demo:** https://forgedemo.gordianstack.com (sign in with a passkey, then "Play the story")
+
 The question the forge answers for each change is whether an authorized person intended that specific change. The answer is not a record on the platform. It is a signed object in Git, checked against the signer policy committed in the repository and rooted in its inception commit.
 
 The forge is built on this repository's passkey library and reuses the demo's sign-in as is. The library offers ES256 before EdDSA, because only a P-256 passkey can make the SSH signature that Git checks.

@@ -6,7 +6,7 @@ When an agent can open a pull request, run a review and trigger a deploy, every 
 
 Open Integrity Forge moves that authority out of the platform and into the repository. Validity lives in Git:
 
-- Every repository starts with a **signed first commit**, its root of trust. Its hash is the repository's id.
+- Every repository starts with a **signed first commit**, its root of trust. Its hash is the repository's id and its decentralized identifier, `did:repo:<hash>`: one address for the repository, the same on every host and in every clone.
 - The rules for who may sign what are **files committed in the repository**, and each commit is judged by the rules in force *before* it, so a key can never authorize itself.
 - Agents work **at the same time, each in its own fork**, each signing with its **own key that lasts an hour**. They can write, sign and propose freely. They cannot merge.
 - A change reaches `main` only when **a person signs that exact commit** with a passkey: both parents, the resulting tree and the message, as an ordinary Git SSH signature.
@@ -57,6 +57,8 @@ shasum -a 256 forge-verify.mjs          # must match the digest the repository p
 node forge-verify.mjs notes --repo <the id of the first commit>
 ```
 
+`--repo` takes the hash in the repository's `did:repo` address, so a clone of any other repository fails, whatever host served it.
+
 It needs Node 22 or later, prints each commit with its rules, and exits 0 when all pass. Git alone checks every signature:
 
 ```sh
@@ -90,7 +92,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the trust model and where this goes n
 
 ## Credits
 
-- **Christopher Allen** ([@ChristopherA](https://github.com/ChristopherA)), Blockchain Commons: architect of Open Integrity and of this forge, and author of [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare), the passkey-only identity library the forge's sign-in and approvals are built on.
+The demo is by Leonardo Custodio and Christopher Allen.
+
+- **Christopher Allen** ([@ChristopherA](https://github.com/ChristopherA)), Blockchain Commons: architect of Open Integrity and of this forge; author of [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare), the passkey-only identity library the forge's sign-in and approvals are built on, and of the forge's passkey-signed inception commits and commits of main.
 - **Leonardo Custodio** ([@leonardocustodio](https://github.com/leonardocustodio)): built the forge demo, its verifier, its page and its tests.
 
 ## License
