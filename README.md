@@ -88,7 +88,7 @@ Open http://localhost:8787, register with a passkey and create a project. Browse
 - **One promoter per project.** The policy and the verifier accept several, and releases that need more than one approval; the page collects one approval per change.
 - **The agents are scripted**, so the demo runs the same way each time, apart from the optional note written with Claude. A signature proves which key signed, not which model produced the change.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the trust model and where this goes next.
+See [SECURITY.md](SECURITY.md) for what an approval signs, the standards beneath it, and these limits with what would close each.
 
 ## Credits
 
