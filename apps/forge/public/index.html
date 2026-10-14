@@ -80,7 +80,7 @@
           <aside class="next" aria-labelledby="next-title">
             <h2 id="next-title">What happens next</h2>
             <ol>
-              <li><strong>Your passkey approves the first commit.</strong> Its hash becomes the repository's id, and the rules in it name your passkey as the only promoter.</li>
+              <li><strong>Your passkey signs the first commit.</strong> Its hash becomes the identifier of the repository, <code>did:repo:</code> and that hash, the same on every host. The next commit sets the rules, and they name your passkey as the only promoter.</li>
               <li><strong>You admit two agents.</strong> Each gets an SSH key for an hour and a fork of its own. Changing the rules needs your approval too.</li>
               <li><strong>The agents work at the same time.</strong> Each signs its commits and proposes them. The forge checks every proposal against the rules.</li>
               <li><strong>You promote what you accept.</strong> Your passkey approves the exact merge: both parents and the resulting tree.</li>
@@ -93,8 +93,9 @@
           <section id="history" class="band" tabindex="-1" aria-labelledby="history-title">
             <header class="band-head">
               <h2 id="history-title">History</h2>
-              <p id="repo-meta" class="repo-meta small"></p>
+              <p id="repo-verdict" class="repo-verdict small"></p>
             </header>
+            <p id="repo-meta" class="repo-meta small"></p>
             <div id="graph" class="graph-scroll" tabindex="-1"></div>
             <div id="release-form" class="release-form"></div>
           </section>

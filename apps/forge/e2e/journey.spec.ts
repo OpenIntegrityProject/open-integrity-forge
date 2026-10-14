@@ -82,10 +82,16 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
   await page.getByRole("button", { name: "Create with passkey" }).click();
   await expect(page.locator("#approval")).toContainText("None: this is the root of trust");
   await expect(page.locator("#approval")).toContainText("Sign the inception commit of gordian-notes");
-  await approve(page, "Sign the inception commit");
+  await expect(page.locator("#approval")).toContainText("The id of this commit becomes the did:repo address of the repository");
+  // The signed inception commit gives the repository its decentralized identifier.
+  const sheet = page.locator("#approval");
+  await sheet.getByRole("button", { name: "Approve with passkey" }).click();
+  await expect(sheet.locator(".did-born pre")).toHaveText(/^did:repo:[0-9a-f]{40}$/, { timeout: 30_000 });
+  const did = await sheet.locator(".did-born pre").textContent();
+  await sheet.getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#approval")).toContainText(`Set the first policy of gordian-notes, with ${memberName} as its only promoter`);
   await approve(page, "Approve the first policy");
-  await expect(page.locator("#repo-meta")).toContainText(/Repository id [0-9a-f]{7}/);
+  await expect(page.locator("#repo-meta")).toContainText(/Repository did:repo:[0-9a-f]{40}/);
   await expect(page.locator(".graph .node")).toHaveCount(2);
 
   // Two agents, two forks, two signed proposals.
@@ -135,6 +141,8 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
   const repoId = /--repo ([0-9a-f]{40})/.exec(commands[2]!)![1]!;
   const verified = execFileSync("sh", ["-c", commands[2]!], { cwd: work }).toString();
   expect(verified).toContain(`Repository id: ${repoId}`);
+  // The did:repo address that the forge shows names the same id that the verifier pins.
+  expect(did).toBe(`did:repo:${repoId}`);
   expect(verified).toMatch(/✓ All 5 commits verify/);
   // Use UTC. During daylight saving time, git on macOS gives ssh-keygen a verify time that is one hour late.
   // Then a key that expires in less than one hour shows as expired.

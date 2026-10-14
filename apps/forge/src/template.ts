@@ -18,7 +18,8 @@ lists the keys it trusts:
   An author key cannot approve, and cannot change \`.repo/\`.
 
 The first commit of \`main\` is the root of trust. Its id is the id of this
-repository. Each later commit is checked against the policy of its first
+repository, and its decentralized identifier is \`did:repo:\` followed by that
+id: the same on every host and in every clone. Each later commit is checked against the policy of its first
 parent, so a commit cannot change the rules it obeys, and a key can never
 authorize itself.
 

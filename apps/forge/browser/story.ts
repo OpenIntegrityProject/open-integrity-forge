@@ -60,7 +60,7 @@ const POLL_MS = 200;
 
 const STEPS: Step[] = [
   {
-    caption: "Create the project. Your passkey approves the first commit, and that commit's hash becomes the repository's id.",
+    caption: "Create the project. Your passkey signs the first commit, and its hash becomes the identifier of the repository: did:repo and that hash.",
     done: (s) => Boolean(s?.repoId),
     async run(a) {
       const created = await a.createProject();
@@ -128,7 +128,7 @@ const STEPS: Step[] = [
     },
   },
   {
-    caption: "Verify the whole history from a fresh clone, with the repository id pinned. No forge record is used.",
+    caption: "Verify the whole history from a fresh clone, pinned to the did:repo address of the repository. No forge record is used.",
     where: "#outside",
     async run(a) {
       await a.spotlight("#outside");

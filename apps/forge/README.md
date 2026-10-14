@@ -10,7 +10,7 @@ The forge is built on this repository's passkey library and reuses the demo's si
 
 ## What it shows
 
-1. **Your passkey signs the first commit.** It is an empty Open Integrity inception commit whose committer is your passkey's SSH key fingerprint, signed as an SSH signature that `git verify-commit` checks. Its hash becomes the repository's id. The next commit, which your passkey also approves, sets the policy and names your passkey as the only promoter.
+1. **Your passkey signs the first commit.** It is an empty Open Integrity inception commit whose committer is your passkey's SSH key fingerprint, signed as an SSH signature that `git verify-commit` checks. Its hash becomes the repository's id and its decentralized identifier, `did:repo:<hash>`, which the History band shows with a copy button. The next commit, which your passkey also approves, sets the policy and names your passkey as the only promoter.
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. The new rules need your approval too.
 3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. Every proposal is checked against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.

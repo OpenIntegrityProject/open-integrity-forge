@@ -3,8 +3,8 @@
 // repository, the agents and the proposals. Each render uses one project state.
 
 import type { AgentState, FreshVerify, Outside, ProjectState, ProposalState, PushAccess } from "./view-types.ts";
-import { copyButton } from "./copy.ts";
-import { clock, laneClass, plural, remaining, short, shortFingerprint } from "./format.ts";
+import { copyButton, copyIconButton } from "./copy.ts";
+import { clock, didRepo, laneClass, plural, remaining, short, shortDidRepo, shortFingerprint } from "./format.ts";
 import { HistoryGraph, legend } from "./graph.ts";
 import { byId, fill, h, reducedMotion } from "./h.ts";
 import { seal } from "./seal.ts";
@@ -142,12 +142,25 @@ export class Stage {
 
   private history(state: ProjectState) {
     const report = state.history;
-    fill(byId("repo-meta"), 
-      h("span", null, "Repository id ", state.repoId ? mono(short(state.repoId), state.repoId) : "not yet"),
-      h("span", null, state.repo.host === "artifacts" ? "Stored in Cloudflare Artifacts" : "Stored in local Durable Objects"),
+    // The result of the verifier is beside the heading. The line under it has the full did:repo address and the storage.
+    fill(
+      byId("repo-verdict"),
       report
         ? h("span", { class: report.ok ? "verdict-ok" : "verdict-fail" }, report.ok ? `${report.commits.length} of ${report.commits.length} commits verify` : report.summary)
         : null,
+    );
+    fill(
+      byId("repo-meta"),
+      state.repoId
+        ? h(
+            "span",
+            { class: "repo-did" },
+            "Repository ",
+            mono(didRepo(state.repoId)),
+            copyIconButton(didRepo(state.repoId), "Copy the did:repo address of the repository"),
+          )
+        : h("span", null, "Repository: no did:repo yet"),
+      h("span", { class: "repo-store" }, state.repo.host === "artifacts" ? "Stored in Cloudflare Artifacts" : "Stored in local Durable Objects"),
     );
     const head = byId("history").querySelector(".band-head")!;
     if (!head.querySelector(".legend")) head.append(legend());
@@ -503,7 +516,13 @@ export class Stage {
             "div",
             { class: "fresh" },
             h("p", { class: fresh.report.ok ? "verdict-ok" : "verdict-fail" }, fresh.report.summary),
-            h("p", { class: "muted small" }, `Cloned from nothing at ${clock(fresh.at)}, with the repository id pinned to `, mono(short(fresh.report.repoId ?? ""), fresh.report.repoId ?? ""), "."),
+            h(
+              "p",
+              { class: "muted small" },
+              `Cloned from nothing at ${clock(fresh.at)}, with the repository pinned to `,
+              fresh.report.repoId ? mono(shortDidRepo(fresh.report.repoId), didRepo(fresh.report.repoId)) : "",
+              ".",
+            ),
             h(
               "ol",
               { class: "fresh-list" },

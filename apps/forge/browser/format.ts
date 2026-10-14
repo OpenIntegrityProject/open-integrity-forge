@@ -2,6 +2,12 @@
 
 export const short = (oid: string | null | undefined) => (oid ? oid.slice(0, 7) : "");
 
+/** The decentralized identifier of a repository: `did:repo:` and the id of its inception commit. */
+export const didRepo = (repoId: string) => `did:repo:${repoId}`;
+
+/** A `did:repo` address with the short form of the id, for a line of text. */
+export const shortDidRepo = (repoId: string) => `did:repo:${short(repoId)}…`;
+
 /** `SHA256:` and the first 10 characters of the digest. */
 export const shortFingerprint = (fp: string) => (fp.startsWith("SHA256:") ? `${fp.slice(0, 17)}…` : fp);
 

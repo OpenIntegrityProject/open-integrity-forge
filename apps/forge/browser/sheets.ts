@@ -7,7 +7,7 @@
 import type { ApprovalRequest, CommitDetail, FileDiff, ProjectState, RuleResultView } from "./view-types.ts";
 import type { ForgeClient, Outcome } from "./forge-client.ts";
 import { copyButton } from "./copy.ts";
-import { clock, laneClass, plural, short, shortFingerprint } from "./format.ts";
+import { clock, didRepo, laneClass, plural, short, shortFingerprint } from "./format.ts";
 import { byId, h, reducedMotion } from "./h.ts";
 import { seal } from "./seal.ts";
 
@@ -161,7 +161,7 @@ export class ApprovalSheet {
       h(
         "dl",
         { class: "facts" },
-        fact("Repository", p.repo ? mono(short(p.repo), p.repo) : "This commit becomes the repository id"),
+        fact("Repository", p.repo ? mono(didRepo(p.repo)) : "The id of this commit becomes the did:repo address of the repository"),
         p.action === "release" ? fact("Tag", p.ref.replace("refs/tags/", "")) : fact("Branch", "main"),
         fact(p.parents.length === 1 ? "Parent" : "Parents", ...parents),
         fact("Resulting tree", root ? "Empty" : mono(short(p.tree), p.tree)),
@@ -203,7 +203,23 @@ export class ApprovalSheet {
     const done = h("button", { class: "primary", type: "button", value: "done", "data-autofocus": true }, "Done");
     this.show(
       "signed",
-      h("div", { class: "signed" }, stamp, h("div", null, h("h2", null, root ? "Signed" : "Approved"), h("p", null, "Main is now at ", mono(short(head), head), "."), h("p", { class: "muted" }, request.summary))),
+      h(
+        "div",
+        { class: "signed" },
+        stamp,
+        h("div", null, h("h2", null, root ? "Signed" : "Approved"), h("p", null, "Main is now at ", mono(short(head), head), "."), h("p", { class: "muted" }, request.summary)),
+      ),
+      // The inception commit gives the repository its identifier, the same on every host and in every clone.
+      ...(root
+        ? [
+            h(
+              "div",
+              { class: "did-born" },
+              h("p", { class: "small" }, "The repository now has its decentralized identifier. It is the same on every host and in every clone."),
+              h("div", { class: "command" }, h("pre", { class: "code", tabindex: 0, "aria-label": "The did:repo address of the repository" }, didRepo(state.repoId ?? head)), copyButton(didRepo(state.repoId ?? head))),
+            ),
+          ]
+        : []),
       raw,
       h("div", { class: "sheet-actions" }, done),
     );
@@ -298,6 +314,8 @@ export class CommitSheet {
         "dl",
         { class: "facts" },
         fact("Commit", mono(short(c.oid), c.oid)),
+        // A commit with no parents is the inception commit. Its id is the identifier of the repository.
+        ...(c.parents.length === 0 ? fact("Identifier", mono(didRepo(c.oid))) : []),
         fact(c.parents.length === 1 ? "Parent" : "Parents", ...(c.parents.length ? c.parents.map((p) => mono(short(p), p)) : ["None: the root"])),
         fact("Tree", mono(short(c.tree), c.tree)),
         fact("Author", `${c.author.name}, ${clock(c.author.timestamp * 1000)}`),
