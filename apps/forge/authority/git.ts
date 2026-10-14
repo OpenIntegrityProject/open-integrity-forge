@@ -1,6 +1,7 @@
 // Git helpers over isomorphic-git, for an in-memory repository or a clone on
-// disk. Commits are parsed from their raw objects here, because isomorphic-git
-// finds the signed payload only for PGP signatures, not for SSH signatures.
+// disk. This module parses commits from their raw objects, because
+// isomorphic-git finds the signed payload only for PGP signatures. It does not
+// find it for SSH signatures.
 
 import git, { Errors, type HttpClient, type PromiseFsClient, type ReadTreeResult } from "isomorphic-git";
 import { fromUtf8, utf8 } from "./bytes.ts";
@@ -8,7 +9,7 @@ import { MemoryFS } from "./memfs.ts";
 
 export type Fs = PromiseFsClient;
 
-/** A repository that the helpers work on. */
+/** A repository for the helpers. */
 export interface Repo {
   fs: Fs;
   dir: string;
@@ -22,7 +23,7 @@ export interface Identity {
   email: string;
   /** Seconds since the epoch. */
   timestamp: number;
-  /** Minutes, as git stores them. */
+  /** Minutes, with the sign of `Date.getTimezoneOffset`, as isomorphic-git uses them. */
   timezoneOffset: number;
 }
 
@@ -35,7 +36,7 @@ export interface Commit {
   message: string;
   /** The armored signature from the gpgsig header, or null. */
   signature: string | null;
-  /** The bytes the signature covers: the commit without its gpgsig header. */
+  /** The text that the signature covers: the commit without its gpgsig header. */
   payload: string;
 }
 
@@ -218,7 +219,7 @@ export async function writeFiles(repo: Repo, files: Record<string, string>): Pro
   return writeTreeFrom(repo, blobs);
 }
 
-/** A copy of `base` with each file in `changes` written, or removed where its value is null. Returns the tree id. */
+/** Write a copy of the tree `base` with the files in `changes`. A null value removes the file. Returns the tree id. */
 export async function changeFiles(repo: Repo, base: string, changes: Record<string, string | null>): Promise<string> {
   const blobs = await listFiles(repo, base);
   for (const [path, text] of Object.entries(changes)) {
@@ -229,9 +230,9 @@ export async function changeFiles(repo: Repo, base: string, changes: Record<stri
 }
 
 /** Makes an armored signature over a commit payload. */
-export type CommitSigner = (payload: string) => Promise<string>;
+type CommitSigner = (payload: string) => Promise<string>;
 
-/** Write a commit with a given tree and parents. Moves `ref` to it when given. Returns its id. */
+/** Write a commit with a given tree and parents. If the options have a `ref`, move that ref to the commit. Returns its id. */
 export async function commitTree(
   repo: Repo,
   options: { tree: string; parents: string[]; message: string; author: Identity; committer?: Identity; sign?: CommitSigner; ref?: string },
@@ -262,11 +263,11 @@ export async function setRef(repo: Repo, ref: string, oid: string): Promise<void
   await git.writeRef({ ...repo, ref, value: oid, force: true });
 }
 
-export type MergeOutcome = { ok: true; tree: string } | { ok: false; conflicts: string[] };
+type MergeOutcome = { ok: true; tree: string } | { ok: false; conflicts: string[] };
 
 /**
  * The tree of a merge of `theirs` into `ours`, both commit ids. Writes the
- * merged objects and no ref. The same inputs give the same tree.
+ * merged objects and keeps no ref. The same inputs give the same tree.
  */
 export async function mergeTree(repo: Repo, ours: string, theirs: string): Promise<MergeOutcome> {
   await setRef(repo, "refs/heads/forge-merge-ours", ours);
@@ -296,7 +297,7 @@ export async function mergeTree(repo: Repo, ours: string, theirs: string): Promi
   }
 }
 
-/** Every commit that `head` reaches, `head` included. */
+/** Every commit that `head` reaches, `head` included. The walk stops at each commit in `stop` and does not include it. */
 export async function reachable(repo: Repo, head: string, stop: ReadonlySet<string> = new Set()): Promise<Commit[]> {
   const seen = new Set<string>();
   const out: Commit[] = [];
@@ -312,7 +313,7 @@ export async function reachable(repo: Repo, head: string, stop: ReadonlySet<stri
   return out;
 }
 
-export interface Tag {
+interface Tag {
   oid: string;
   name: string;
   /** The commit the tag names. */
@@ -321,7 +322,7 @@ export interface Tag {
 }
 
 /** Read and parse an annotated tag object. */
-export async function readTagObject(repo: Repo, oid: string): Promise<Tag> {
+async function readTagObject(repo: Repo, oid: string): Promise<Tag> {
   const { object, type } = await git.readObject({ ...repo, oid, format: "content" });
   if (type !== "tag") throw new Error(`${oid} is a ${type}, not a tag`);
   const raw = fromUtf8(object as Uint8Array);
@@ -331,7 +332,7 @@ export async function readTagObject(repo: Repo, oid: string): Promise<Tag> {
   return { oid, name: field("tag"), target: field("object"), message: split < 0 ? "" : raw.slice(split + 2) };
 }
 
-/** Every annotated tag of the repository, by name. Lightweight tags are left out: they carry no approval. */
+/** Every annotated tag of the repository, by name. The list does not include lightweight tags, because they carry no approval. */
 export async function annotatedTags(repo: Repo): Promise<Tag[]> {
   const out: Tag[] = [];
   for (const name of await git.listTags(repo)) {
@@ -343,16 +344,16 @@ export async function annotatedTags(repo: Repo): Promise<Tag[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Write an annotated tag object for `target` and point refs/tags/<name> at it. Returns the tag object id. */
+/** Write an annotated tag object for `target`, and set refs/tags/<name> to it. Returns the tag object id. */
 export async function writeTag(repo: Repo, input: { name: string; target: string; message: string; tagger: Identity }): Promise<string> {
   await git.annotatedTag({ ...repo, ref: input.name, object: input.target, message: input.message, tagger: input.tagger });
   return (await resolve(repo, `refs/tags/${input.name}`))!;
 }
 
-/** Every object that `head` reaches: its commits, their trees and their blobs. */
+/** Every object that `head` reaches: its commits, their trees and their blobs. `head` can also be a tag object. */
 export async function reachableObjects(repo: Repo, head: string): Promise<Set<string>> {
   const out = new Set<string>();
-  // A tag object: send it, and what its commit reaches.
+  // For a tag object, include the tag and every object that its commit reaches.
   const { type } = await git.readObject({ ...repo, oid: head, format: "content" });
   if (type === "tag") {
     out.add(head);
@@ -388,11 +389,11 @@ export async function firstParentChain(repo: Repo, head: string): Promise<Commit
 
 // --- Git over HTTPS -------------------------------------------------------------
 
-/** How a smart HTTP remote takes a token: Basic, with the token secret as the password. */
-export interface HttpRemote {
+/** A smart HTTP remote. The client sends the token as the password of HTTP Basic authentication. */
+interface HttpRemote {
   http: HttpClient;
   url: string;
-  /** The token. A `?expires=` suffix, as Artifacts adds, is removed before use. */
+  /** The token. The client removes a `?expires=` suffix, as Artifacts adds it, before use. */
   token?: string;
 }
 
@@ -405,7 +406,7 @@ export async function cloneHttp(repo: Repo, remote: HttpRemote, ref = "main"): P
   await git.clone({ ...repo, http: remote.http, url: remote.url, ref, noCheckout: true, onAuth: onAuth(remote) });
 }
 
-/** Fetch one branch of a remote, and keep it at `into`. Returns its commit id. */
+/** Fetch one branch of a remote, and set the ref `into` to it. Returns its commit id. */
 export async function fetchHttp(repo: Repo, remote: HttpRemote, branch: string, into: string): Promise<string> {
   const result = await git.fetch({
     ...repo,

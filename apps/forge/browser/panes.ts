@@ -1,23 +1,27 @@
-// The demo's sign-in, codes and settings panes, wired as on the demo page.
-// The forge adds one thing: after a passkey is made here, it may become the
-// promoter key (see `passkeyMade`).
+// The demo's sign-in, codes and settings panes, connected as on the demo page,
+// with these changes. Sign in asks for a passkey at once. The sign-in pane
+// opens only when that request does not sign in, so that the person can try
+// again or recover. Register opens the same pane with only the register form.
+// After the page makes a passkey, that passkey can become the promoter key
+// (see `passkeyMade`).
 
 import type { PublicKeyCredentialHint } from "passkey-cloudflare/browser";
 import { CodesPane } from "../../demo/browser/codes-pane.ts";
-import { $, input, pane, paneStatus, status, type PaneId } from "../../demo/browser/dom.ts";
+import { $, input, openPane, pane, paneStatus, status, type PaneId } from "../../demo/browser/dom.ts";
 import type { Flows, Told } from "../../demo/browser/flows.ts";
 import { SettingsPane } from "../../demo/browser/settings-pane.ts";
 import { SignInPane } from "../../demo/browser/sign-in-pane.ts";
+import { ask } from "./ask.ts";
+import { copy } from "./copy.ts";
 
-export interface PaneHooks {
+interface PaneHooks {
   flows: Flows;
   /** Run a passkey action, one at a time. */
   passkeyAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>): (...args: A) => void;
   guard<A extends unknown[]>(fn: (...args: A) => Promise<unknown>): (...args: A) => void;
-  isPasskeyActionRunning(): boolean;
-  /** Called when the signed-in person may have changed. */
+  /** The panes call this when the signed-in person possibly changed. */
   refresh(): Promise<void>;
-  /** Called after a passkey was made on this page. */
+  /** The panes call this after the page makes a passkey. */
   passkeyMade(): Promise<void>;
   signedOut(): Promise<void>;
 }
@@ -35,29 +39,38 @@ export function wirePanes(hooks: PaneHooks) {
     settings.show(await flows.settings(who), passkeyAction(revokePasskey));
   }
 
-  async function openSignIn() {
-    if (hooks.isPasskeyActionRunning()) return;
-    await signIn.open();
-    await autofill();
+  /**
+   * Open the sign-in pane in `mode`. In "sign-in" mode, it says `reason` and
+   * offers to try the passkey again or to recover. In "register" mode, it
+   * shows only the register form.
+   */
+  function openAs(mode: "sign-in" | "register", reason = "") {
+    pane("sign-in").dataset.mode = mode;
+    $("sign-in-title").textContent = mode === "register" ? "Register" : "Sign in";
+    $("sign-in-status").textContent = "";
+    $("choices-reason").textContent = reason;
+    $("entry").hidden = false;
+    $("choices").hidden = false;
+    $("rebind").hidden = true;
+    openPane("sign-in");
+    (mode === "register" ? input("register-name") : $("continue")).focus();
   }
 
-  async function autofill() {
-    if (!(await flows.offersAutofill()) || !signIn.isOpen) return;
-    signIn.offerAutofill();
-    const loggedIn = await flows.autofill(() => signIn.autofillWaiting());
-    if (loggedIn.result === "no-passkey") return;
-    if (loggedIn.result === "not-accepted") return signIn.notAccepted();
-    signIn.close();
-    await hooks.refresh();
-  }
-
-  async function continueWithPasskey() {
+  /** Sign in with a passkey at once. Only when no passkey signs in, open the pane. */
+  async function signInNow() {
     status("");
     const loggedIn = await flows.continueWithPasskey();
-    if (loggedIn.result === "no-passkey") return signIn.noPasskeyUsed();
-    if (loggedIn.result === "not-accepted") return signIn.notAccepted();
-    signIn.close();
-    await hooks.refresh();
+    if (loggedIn.result === "signed-in") {
+      signIn.close();
+      await hooks.refresh();
+      return;
+    }
+    if (loggedIn.result === "no-passkey") {
+      openAs("sign-in", "No passkey was used. If you have a passkey for this site, try again. If you lost yours, recover with a recovery code.");
+      return;
+    }
+    openAs("sign-in", "Try again with another passkey, or recover with a recovery code.");
+    paneStatus("sign-in", "That passkey was not accepted.");
   }
 
   async function register(event: SubmitEvent) {
@@ -96,12 +109,18 @@ export function wirePanes(hooks: PaneHooks) {
   }
 
   async function revokePasskey(label: string) {
-    if (!confirm(`Revoke the passkey ${label}? It will no longer log in.`)) return;
+    const revoking = await ask({ title: `Revoke the passkey ${label}?`, message: "It will no longer sign in.", confirm: "Revoke", danger: true });
+    if (!revoking) return;
     await settled(await flows.revoke(label));
   }
 
   async function rotateCodes() {
-    if (!confirm("Replace your recovery codes? The old ones will stop working.")) return;
+    const replacing = await ask({
+      title: "Replace your recovery codes?",
+      message: "You get a fresh set of 8, shown once. The old ones stop working at once.",
+      confirm: "Replace them",
+    });
+    if (!replacing) return;
     const rotated = await flows.rotateCodes();
     if (rotated.result === "told") return tellIn("settings", rotated);
     settings.hideRotatePrompt();
@@ -113,7 +132,12 @@ export function wirePanes(hooks: PaneHooks) {
     await hooks.signedOut();
   }
 
-  $("open-sign-in").addEventListener("click", guard(openSignIn));
+  const signInAction = passkeyAction(signInNow);
+  const openRegister = () => openAs("register");
+  $("open-sign-in").addEventListener("click", signInAction);
+  $("open-register").addEventListener("click", openRegister);
+  $("switch-to-register").addEventListener("click", openRegister);
+  $("switch-to-sign-in").addEventListener("click", signInAction);
   $("open-settings").addEventListener("click", guard(async () => {
     settings.clearStatus();
     await showSettings();
@@ -121,10 +145,17 @@ export function wirePanes(hooks: PaneHooks) {
   for (const close of document.querySelectorAll<HTMLButtonElement>("#sign-in .close, #settings .close")) {
     close.addEventListener("click", () => close.closest("dialog")!.close());
   }
+  // A new message in the status line of a pane scrolls into view, so the person sees it.
+  for (const id of ["sign-in-status", "codes-status", "settings-status"]) {
+    const line = $(id);
+    new MutationObserver(() => {
+      if (line.textContent) line.scrollIntoView({ block: "nearest" });
+    }).observe(line, { childList: true, characterData: true, subtree: true });
+  }
   pane("codes").addEventListener("cancel", (event) => event.preventDefault());
   pane("codes").addEventListener("close", () => codes.closed());
   pane("sign-in").addEventListener("close", () => flows.stopAutofill());
-  $("continue").addEventListener("click", passkeyAction(continueWithPasskey));
+  $("continue").addEventListener("click", signInAction);
   for (const toggle of document.querySelectorAll<HTMLButtonElement>(".info-toggle")) {
     const info = $(toggle.getAttribute("aria-controls")!);
     toggle.addEventListener("click", () => {
@@ -143,12 +174,10 @@ export function wirePanes(hooks: PaneHooks) {
   }));
   $("codes-toggle").addEventListener("click", () => codes.toggle());
   $("codes-copy").addEventListener("click", guard(async () => {
-    await navigator.clipboard.writeText(codes.text);
-    status("Copied your recovery codes.");
+    await copy($<HTMLButtonElement>("codes-copy"), codes.text);
   }));
   $("copy-record-id").addEventListener("click", guard(async () => {
-    await navigator.clipboard.writeText(settings.recordId);
-    status("Copied your record id.");
+    await copy($<HTMLButtonElement>("copy-record-id"), settings.recordId);
   }));
   for (const hint of ["client-device", "hybrid", "security-key"] as const) {
     $(`add-passkey-${hint}`).addEventListener("click", passkeyAction(() => addPasskey(hint)));
@@ -165,5 +194,5 @@ export function wirePanes(hooks: PaneHooks) {
   }));
   $("logout-elsewhere").addEventListener("click", passkeyAction(async () => settled(await flows.logoutElsewhere())));
 
-  return { openSignIn: guard(openSignIn) };
+  return { signIn: signInAction, openRegister };
 }

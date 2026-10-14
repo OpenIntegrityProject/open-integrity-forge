@@ -1,6 +1,6 @@
-// A person at a running forge, for the scripts: a software authenticator,
+// A person at a live forge, for the scripts: a software authenticator,
 // cookies, the demo client and the forge client. The software authenticator
-// is test-only code: it signs whatever it is asked to.
+// is test-only code: it signs all data that it gets.
 
 import type { RegistrationResponseJSON } from "passkey-cloudflare/browser";
 import { SoftwareAuthenticator } from "passkey-cloudflare/testing";
@@ -42,7 +42,7 @@ export function session(origin: string, edge: boolean) {
       if (registered.result !== "ok") throw new Error(`register: ${registered.result}`);
       must(await forge.setPromoterKey(created), "promoter key");
     },
-    /** Poll the project until `ready` holds. */
+    /** Poll the project until `ready` is true. */
     async waitFor(id: string, ready: (s: ProjectState) => boolean, what: string, ms = 120_000): Promise<ProjectState> {
       const until = Date.now() + ms;
       while (Date.now() < until) {

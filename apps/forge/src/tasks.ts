@@ -1,12 +1,13 @@
-// What the agents do. Each task is a fixed script, so the demo runs the same
-// way every time. Two honest tasks touch different files, so both can merge.
-// The rogue task tries to make its own key a promoter.
+// What the agents do. Most tasks are fixed scripts, so the demo runs the same
+// way each time. The `llm-note` task asks Claude for its text. Two honest
+// tasks change different files, so both can merge. The rogue task tries to
+// make its own key a promoter.
 
 import { parsePolicy, POLICY_PATH, renderPolicy } from "../authority/policy.ts";
 import { policyFiles } from "./template.ts";
 import { NOTE_MODEL, type Note } from "./llm.ts";
 
-export interface TaskContext {
+interface TaskContext {
   agentId: string;
   agentName: string;
   /** The `ssh-ed25519 AAAA...` text of the agent's own key. */
@@ -23,15 +24,13 @@ export interface TaskContext {
   writeNote?: (input: { topic: string; agentName: string; existing: string[] }) => Promise<Note>;
 }
 
-export interface Task {
+interface Task {
   id: string;
   title: string;
   branch: string;
   rogue: boolean;
-  /** The commit message; a task may set it from its own edit instead (see `messageFrom`). */
+  /** The commit message. For the `llm-note` task, `AgentRun` uses `noteMessage` instead. */
   message: string;
-  /** A commit message from the task's own work, such as the model's. */
-  messageFrom?: (changes: Record<string, string | null>) => string | null;
   /** The files to write, or to remove where the value is null. */
   edit(ctx: TaskContext): Promise<Record<string, string | null>>;
 }
@@ -75,17 +74,16 @@ function noteTask(agentId: string): Task {
   };
 }
 
-/** The note the model wrote in the last run of a note task, by agent, for its commit message. */
+/** The note from the model in the last `llm-note` task of each agent. `noteMessage` uses it for the commit message. */
 const lastNote = new Map<string, Note>();
 
-/** A note on a topic a person gives, written by Claude. */
-export const LLM_NOTE: Task = {
+/** A note that Claude writes on a topic that a person gives. */
+const LLM_NOTE: Task = {
   id: "llm-note",
   title: "Write a note with Claude",
   branch: "llm-note",
   rogue: false,
   message: "Add a note written with Claude\n",
-  messageFrom: () => null,
   async edit({ args, agentId, agentName, list, say, writeNote }) {
     if (!writeNote) throw new Error("this forge has no Anthropic API key");
     const topic = args.topic ?? "the Gordian principles";
@@ -98,14 +96,14 @@ export const LLM_NOTE: Task = {
   },
 };
 
-/** The commit message for an agent's last note task: the model's line, and the model named. */
+/** The commit message for the last `llm-note` task of an agent: the line from the model, and the name of the model. */
 export function noteMessage(agentId: string): string {
   const note = lastNote.get(agentId);
   return note ? `${note.commitMessage}\n\nWritten by ${NOTE_MODEL} on a topic a person gave.\n` : LLM_NOTE.message;
 }
 
-/** A task that two agents can both do, so that their proposals conflict once one is promoted. */
-export const RETITLE: Task = {
+/** A task that two agents can both do, so that their proposals conflict after a promoter promotes one of them. */
+const RETITLE: Task = {
   id: "readme-title",
   title: "Retitle the README",
   branch: "readme-title",

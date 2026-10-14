@@ -1,12 +1,13 @@
 // The local configuration must bind the same Durable Objects, with the same
-// migrations, as the deployed one, or local runs would prove nothing about it.
+// migrations, as the deployed configuration. If not, local runs prove nothing
+// about the deployed forge.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** Parse JSONC: remove the comments outside strings, and each comma before a closing bracket. */
+/** Parse JSONC: remove the comments outside strings, and each comma before a `]` or a `}`. */
 export function readJsonc(path: string): any {
   const text: string = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", path), "utf8");
   let out = "";

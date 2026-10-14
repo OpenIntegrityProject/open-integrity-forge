@@ -66,10 +66,10 @@ describe("passkey keys in OpenSSH form", () => {
       const dir = mkdtempSync(join(tmpdir(), "forge-sshkey-"));
       writeFileSync(join(dir, "key.pub"), `${line} leo\n`);
       expect(execFileSync("ssh-keygen", ["-l", "-f", join(dir, "key.pub")]).toString()).toMatch(algorithm === "ES256" ? /\(ECDSA\)/ : /\(ED25519\)/);
-      // ssh-keygen reads the whole file, passkey lines included, and checks an agent's signature with it.
+      // `ssh-keygen` reads the full file, with the passkey lines, and uses it to check the signature of an agent.
       const ada = await testAuthor("ada", Date.now() - 60_000, Date.now() + 3600_000);
       const file = allowedSigners({ ...valid, promoters: [leo.entry], authors: [ada.entry] });
-      // A P-256 passkey is listed as the security key it signs Git commits with; an Ed25519 one cannot sign them.
+      // The file lists a P-256 passkey as the security key that signs Git commits. An Ed25519 passkey cannot sign Git commits.
       if (algorithm === "ES256") expect(file).toMatch(/^leo namespaces="git" sk-ecdsa-sha2-nistp256@openssh\.com AAAA/m);
       else expect(file).toContain(`leo namespaces="forge-approval" ${line}`);
       writeFileSync(join(dir, "allowed"), file);

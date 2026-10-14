@@ -59,8 +59,8 @@ import { fingerprint, parsePublicKeyText, publicKeyText } from "../authority/ssh
 
 // One project: its repository, its agents, their proposals, and the
 // approvals that move main. The platform writes main only here, and only with
-// an approval that verifies against the policy of main's current head. The
-// platform is a convenience: the repository itself says which commits are
+// an approval that verifies against the policy of the current head of main.
+// The platform is a convenience: the repository itself says which commits are
 // valid, and any clone can check that with the same verifier.
 
 export type Result<T> = { ok: true; value: T } | ({ ok: false; status: number } & Refusal);
@@ -89,7 +89,7 @@ interface ProjectRow {
   mainHead: string | null;
 }
 
-/** "sign" is the passkey's SSH signature of the empty inception commit; the others are approvals in a trailer. */
+/** `sign` is the SSH signature of the passkey on the empty inception commit. `release` is an approval in the message of a tag. The others are commits of main that the passkey signs as a whole. */
 type ApprovalKind = "sign" | "incept" | "admit" | "revoke" | "promote" | "release";
 
 type AgentRow = {
@@ -128,7 +128,7 @@ interface Workspace {
   main: string;
 }
 
-/** A name that Artifacts accepts in a repository name. */
+/** A form of `name` that Artifacts accepts in a repository name. */
 function slug(name: string): string {
   return (
     name
@@ -198,7 +198,7 @@ export class Project extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS version (id INTEGER PRIMARY KEY CHECK (id = 0), n INTEGER NOT NULL);
     `);
-    // Projects made before the detail column existed get it here.
+    // Projects made before these columns existed get them here.
     const columns = this.sql.exec<{ name: string }>("PRAGMA table_info(proposals)").toArray().map((c) => c.name);
     if (!columns.includes("detail")) this.sql.exec("ALTER TABLE proposals ADD COLUMN detail TEXT");
     if (!columns.includes("redone_at")) this.sql.exec("ALTER TABLE proposals ADD COLUMN redone_at INTEGER");
@@ -223,7 +223,7 @@ export class Project extends DurableObject<Env> {
     this.sql.exec("INSERT INTO version (id, n) VALUES (0, 1) ON CONFLICT (id) DO UPDATE SET n = n + 1");
   }
 
-  /** The number of changes so far. The state route uses it as an ETag, and the stream to know when to send. */
+  /** The number of changes until now. The state route uses it as an ETag. The stream route uses it to know when to send the state. */
   version(): number {
     return this.sql.exec<{ n: number }>("SELECT n FROM version").toArray()[0]?.n ?? 0;
   }
@@ -251,7 +251,7 @@ export class Project extends DurableObject<Env> {
     return this.sql.exec<ProposalRow>("SELECT * FROM proposals WHERE id = ?", id).toArray()[0] ?? null;
   }
 
-  /** Run `fn` after every earlier exclusive call ends, so two writes of main never interleave. */
+  /** Run `fn` after every earlier exclusive call ends, so that two writes of main never occur at the same time. */
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.queue.then(fn, fn);
     this.queue = run.catch(() => {});
@@ -294,7 +294,7 @@ export class Project extends DurableObject<Env> {
     return { name: project.promoter.id, email: "promoter@forge.invalid", timestamp: Math.floor(now / 1000), timezoneOffset: 0 };
   }
 
-  // --- set-up -----------------------------------------------------------------------
+  // --- creation ---------------------------------------------------------------------
 
   /** Record a new project. Refuses if this object already holds one. */
   create(input: { id: string; name: string; owner: string; promoter: PromoterKey; rp: { rpId: string; origin: string } }): boolean {
@@ -354,10 +354,11 @@ export class Project extends DurableObject<Env> {
   }
 
   /**
-   * Request the next step of a project's inception. First the passkey signs
-   * an empty inception commit as an SSH signature; its id becomes the
-   * repository id. Then the passkey approves the first policy: the template,
-   * with a policy that names that passkey as the only promoter.
+   * Request the next step of the inception of a project. First, the passkey
+   * signs an empty inception commit with an SSH signature. The id of that
+   * commit becomes the repository id. Then, the passkey approves the first
+   * policy commit: the template, with a policy that names that passkey as the
+   * only promoter.
    */
   async prepareInception(): Promise<Result<ApprovalRequest>> {
     const project = this.project();
@@ -464,9 +465,9 @@ export class Project extends DurableObject<Env> {
   }
 
   /**
-   * Request an approval that admits a person's own SSH key, so they can work
-   * from a laptop as the agents do: in a fork of their own, signing each
-   * commit, with no say over main or the rules.
+   * Request an approval that admits the SSH key of a person. Then the person
+   * can work from a laptop as the agents do. The person has a fork and signs
+   * each commit, but has no control over main or the rules.
    */
   async preparePersonAdmission(publicKey: string): Promise<Result<ApprovalRequest>> {
     const project = this.project();
@@ -687,9 +688,10 @@ export class Project extends DurableObject<Env> {
   }
 
   /**
-   * Write the commit of main the passkey signed: the same payload, message and
-   * time it was asked to sign, with its signature. Refuses unless the signature
-   * verifies as a promoter's under `policy`. It does not move a ref.
+   * Write the commit of main that the passkey signed. It uses the payload,
+   * message and time of the request, and adds the signature. It refuses unless
+   * the signature verifies as a promoter's under `policy`. It does not move a
+   * ref.
    */
   private async commitMain(repo: MemRepo, signed: Signed, policy: Policy): Promise<{ oid: string; by: string }> {
     const project = this.project()!;
@@ -730,7 +732,7 @@ export class Project extends DurableObject<Env> {
     await this.recordHistory(repo, oid);
   }
 
-  /** Write the commit that sets the first policy, on top of the inception commit. */
+  /** Write the commit that sets the first policy. Its parent is the inception commit. */
   private async incept(project: ProjectRow, signed: Signed, policy: Policy) {
     const { payload } = signed;
     if (!project.repoId || project.mainHead !== project.repoId) throw new Refused(409, "exists", "This project already has its first policy.");
@@ -827,11 +829,11 @@ export class Project extends DurableObject<Env> {
     this.cache("policy", data.policy);
     this.event("policy", `Policy commit ${oid.slice(0, 7)} approved by ${by}: revokes the key of ${agent.name}.`);
     await this.recordHistory(ws.repo, oid);
-    // The agent stops, and its fork token stops working.
+    // Stop the agent, and make its fork token invalid.
     const secret = await this.run(agent.id).revoke();
     if (secret) await this.host().revokeToken(agent.fork, secret).catch((error) => console.error(error));
     this.event("agent", `${agent.name} is stopped, and its write token for ${agent.fork} no longer works.`);
-    // Every open proposal is checked again under the new rules.
+    // Check each open proposal again under the new rules.
     for (const other of this.sql.exec<ProposalRow>("SELECT * FROM proposals WHERE status IN ('ready', 'stale')").toArray()) {
       const head = await this.fetchProposal(ws, other);
       await this.saveReport(ws.repo, other, oid, await verifyProposal(ws.repo, oid, head));
@@ -890,10 +892,10 @@ export class Project extends DurableObject<Env> {
   }
 
   /**
-   * One commit as the commit sheet shows it: its headers, message, signature
-   * or approval, the files it changes against its first parent, and the rules
-   * the last report gave it. A commit that is only in a fork is fetched from
-   * the fork of the proposal that holds it.
+   * One commit as the commit sheet shows it. The sheet shows its headers,
+   * message, signature or approval, and the rules from the last report. It
+   * also shows the files that the commit changes against its first parent. For a commit that is only in a fork, the forge
+   * fetches it from the fork of the proposal that holds it.
    */
   async commit(oid: string): Promise<Result<CommitDetail>> {
     const project = this.project();
@@ -976,7 +978,7 @@ export class Project extends DurableObject<Env> {
     this.touch();
   }
 
-  /** An agent proposes the head of a branch in its fork. Returns the proposal id once it is verified. */
+  /** An agent proposes the head of a branch in its fork. Returns the proposal id after the forge verifies it. */
   propose(input: { agentId: string; taskSeq: number; taskId: string; title: string; branch: string; head: string }): Promise<string> {
     return this.exclusive(async () => {
       const project = this.project()!;
@@ -1013,9 +1015,9 @@ export class Project extends DurableObject<Env> {
   }
 
   /**
-   * A push to a fork arrived from a push event. The agents' own pushes are
-   * proposed by the agents, so they are left alone. Any other push to a
-   * branch updates the open proposal of that branch, or opens a new one.
+   * A push event reports a push to a fork. The agents propose their own
+   * pushes, so the forge ignores them here. Any other push to a branch
+   * updates the open proposal of that branch, or opens a new one.
    */
   forkPushed(agentId: string, branch: string, head: string): Promise<string> {
     return this.exclusive(async () => {
@@ -1060,7 +1062,7 @@ export class Project extends DurableObject<Env> {
     });
   }
 
-  /** A push to main of the project repository arrived. If the forge did not make it, verify main from a fresh clone. */
+  /** A push event reports a push to main of the project repository. If the forge did not make it, verify main from a fresh clone. */
   mainPushed(head: string): Promise<string> {
     return this.exclusive(async () => {
       const project = this.project();
@@ -1099,9 +1101,9 @@ export class Project extends DurableObject<Env> {
   }
 
   /**
-   * A proposal that conflicts with main: bring the agent's fork up to main,
-   * with a fast-forward push, and give the agent the same task again. The
-   * new work starts from main as it is now, so it merges.
+   * A proposal that conflicts with main: move main of the agent's fork to
+   * main of the project with a fast-forward push. Then give the agent the same
+   * task again. The new work starts from main as it is now, so it merges.
    */
   redo(proposalId: string): Promise<Result<null>> {
     return this.exclusive(async () => {
@@ -1262,7 +1264,7 @@ export class Project extends DurableObject<Env> {
 
   /**
    * Push main, as it is, to the mirror. A forced push: the mirror holds what
-   * main holds, even if someone changed the mirror by hand. Its workflow then
+   * main holds, even if someone changed the mirror manually. Its workflow then
    * checks the rules with no forge in the loop.
    */
   mirror(): Promise<Result<MirrorState>> {
@@ -1373,7 +1375,7 @@ export class Project extends DurableObject<Env> {
   }
 }
 
-/** A refusal thrown inside an approval. `approve` returns it as its answer. */
+/** A refusal that a step throws. `approve` and `mirror` return it as a refusal. */
 class Refused extends Error {
   constructor(
     readonly status: number,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NoteRefused, writeNote, type NoteClient } from "./llm.ts";
 
-/** A stand-in for the Anthropic client that records the request and answers with `reply`. */
+/** A replacement for the Anthropic client. It records the request and gives `reply` as its answer. */
 function client(reply: object) {
   const seen: unknown[] = [];
   const fake = { create: async (request: unknown) => (seen.push(request), reply) } as unknown as NoteClient;

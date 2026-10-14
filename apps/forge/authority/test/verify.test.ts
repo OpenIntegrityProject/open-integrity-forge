@@ -60,7 +60,7 @@ describe("a passkey inception", () => {
       const raw = new TextDecoder().decode((await git.readObject({ ...h.repo, oid: commit.oid, format: "content" })).object as Uint8Array);
       const oid = execFileSync("git", ["-C", dir, "hash-object", "-t", "commit", "-w", "--stdin"], { input: raw }).toString().trim();
       expect(oid).toBe(commit.oid);
-      // verify-commit exits non-zero, and execFileSync throws, unless the signature is good.
+      // `verify-commit` gives a non-zero exit code if the signature is bad. Then `execFileSync` throws an error.
       execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "verify-commit", oid], { stdio: "pipe" });
       const status = execFileSync("git", ["-C", dir, "-c", `gpg.ssh.allowedSignersFile=${join(dir, "allowed")}`, "log", "-1", "--no-walk", "--format=%G?", oid]).toString().trim();
       expect(status, commit.oid).toBe("G");
@@ -237,7 +237,7 @@ describe("merges only", () => {
     const strictTree = await changeFiles(h.repo, (await readCommit(h.repo, h.admitted)).tree, { [path]: render(strict) });
     const base = await h.approve({ action: "policy", parents: [h.admitted], tree: strictTree, summary: "Merges only" });
     const work = await h.work(h.ada, base, { "a.md": "a\n" });
-    // A squash: the work's tree on main with one parent, approved by the promoter.
+    // A squash: the promoter approves the tree of the work on main, with one parent.
     const squash = await h.approve({ action: "policy", parents: [base], tree: (await readCommit(h.repo, work)).tree, summary: "Squash" });
     const squashed = await verifyHistory(h.repo, squash);
     expect(rule(squashed.commits.at(-1), "R7")).toMatchObject({ ok: false });
@@ -260,20 +260,20 @@ describe("releases", () => {
       return by.approve(p.bytes);
     };
     const tagger = who("Leo", T0);
-    // One promoter, the default: one approval releases.
+    // The default is one promoter, so one approval is sufficient for a release.
     await tagApproved(h.repo, { name: "v1.0.0", target: main.oid, message: "Release v1.0.0", approvals: [await approve(h.leo, "v1.0.0")], tagger });
     let report = await verifyHistory(h.repo, h.admitted);
     expect(report.tags).toMatchObject([{ name: "v1.0.0", ok: true, approvedBy: ["leo"] }]);
     expect(report.ok).toBe(true);
 
-    // The policy asks for two promoters: one approval no longer releases, two do.
+    // The policy asks for two promoters. Now one approval is not sufficient for a release, but two are.
     const ana = await promoter("ana");
     const two = { ...h.policy, promoters: [...h.policy.promoters, ana.entry], releaseApprovals: 2 };
     const tree = await changeFiles(h.repo, main.tree, { [path]: render(two) });
     const strict = await readCommit(h.repo, await h.approve({ action: "policy", parents: [h.admitted], tree, summary: "Two promoters for a release" }));
     await tagApproved(h.repo, { name: "v2.0.0", target: strict.oid, message: "Release v2.0.0", approvals: [await approve(h.leo, "v2.0.0", strict)], tagger });
     await tagApproved(h.repo, { name: "v2.0.1", target: strict.oid, message: "Release v2.0.1", approvals: [await approve(h.leo, "v2.0.1", strict), await approve(ana, "v2.0.1", strict)], tagger });
-    // An approval made for another tag, and a tag of a commit that is not on main.
+    // An approval for a different tag, and a tag of a commit that is not on main.
     await tagApproved(h.repo, { name: "v2.0.2", target: strict.oid, message: "Release v2.0.2", approvals: [await approve(h.leo, "v9", strict), await approve(ana, "v2.0.2", strict)], tagger });
     const side = await readCommit(h.repo, await h.work(h.ada, strict.oid, { "x.md": "x\n" }));
     await tagApproved(h.repo, { name: "v3.0.0", target: side.oid, message: "Release v3.0.0", approvals: [await approve(h.leo, "v3.0.0", side)], tagger });

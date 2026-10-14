@@ -1,8 +1,8 @@
 // Artifacts sends `pushed` events only to a subscription for one repository.
-// With a Cloudflare API token, the forge subscribes each repository it makes
-// to its queue, and removes the subscription when it deletes the repository.
-// Without the token it does nothing, and scripts/subscribe-pushes.ts does the
-// same work by hand.
+// With a Cloudflare API token, the forge subscribes its queue to each
+// repository that it makes. It removes the subscription when it deletes the
+// repository. Without the token, the forge makes no subscription, and
+// scripts/subscribe-pushes.ts does the same work manually.
 
 const API = "https://api.cloudflare.com/client/v4";
 
@@ -32,7 +32,7 @@ function pushQueue(env: Env & { CF_API_TOKEN: string }): Promise<string> {
   return queueId;
 }
 
-/** Subscribe the push queue to `pushed` events of one repository. Returns the subscription id, or null when not set up. */
+/** Subscribe the push queue to `pushed` events of one repository. Returns the subscription id, or null when the deployment cannot subscribe. */
 export async function subscribePushes(env: Env, repoName: string): Promise<string | null> {
   if (!enabled(env)) return null;
   const created = await call<{ id: string }>(env, "/event_subscriptions/subscriptions", {
@@ -48,7 +48,7 @@ export async function subscribePushes(env: Env, repoName: string): Promise<strin
   return created.id;
 }
 
-/** Remove a subscription. A failure is logged, not thrown: the repository is gone either way. */
+/** Remove a subscription. It logs a failure and does not throw it, because the repository is gone in all cases. */
 export async function unsubscribe(env: Env, id: string): Promise<void> {
   if (!enabled(env)) return;
   await call(env, `/event_subscriptions/subscriptions/${id}`, { method: "DELETE" }).catch((error) => console.error(error));

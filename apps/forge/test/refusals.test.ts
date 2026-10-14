@@ -72,13 +72,13 @@ describe("the forge refuses", () => {
     const theirs = eve.created;
     expect(await leo.forge.setPromoterKey(theirs)).toMatchObject({ result: "refused", status: 403, refusal: { error: "not-yours" } });
 
-    // A second passkey of Leo's replaces the first only with a fresh step-up.
+    // A second passkey of Leo replaces the first passkey only after a new step-up.
     expect((await leo.demo.enrol()).result).toBe("ok");
     app.clock.offsetMs = 11 * 60_000;
     const raw = await leo.browser.post("/forge/me/promoter-key", { response: leo.created });
     expect(raw.status).toBe(403);
     expect(((await raw.json()) as { error: string }).error).toBe("step-up-required");
-    // The client steps up when asked, and sends it again.
+    // The client does a step-up when the forge asks for it, and then sends the request again.
     const key = must(await leo.forge.setPromoterKey(leo.created));
     expect(key.credentialId).toBe(leo.created!.id);
     expect((await leo.forge.me())!.promoter?.credentialId).toBe(leo.created!.id);

@@ -1,0 +1,11 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // The specs control a browser from Node. The two configuration files in `include` also run in Node.
+    "lib": ["es2024", "dom"],
+    "types": ["node"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": [".", "../playwright.config.ts", "../vitest.authority.config.ts"]
+}

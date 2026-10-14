@@ -2,7 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { PromoterKey, ProjectListing } from "./state.ts";
 
 // What the forge keeps about one person, by identity record id: their
-// promoter key and their projects. The identity layer keeps the rest.
+// promoter key, their projects and their recent approval requests. The
+// identity layer keeps the rest.
 
 const PREPARES_PER_MINUTE = 30;
 
@@ -43,7 +44,7 @@ export class Person extends DurableObject {
     this.sql.exec("DELETE FROM projects WHERE id = ?", id);
   }
 
-  /** Count one approval request. False when the person made too many in the last minute. */
+  /** Count one approval request. Returns false when the person made too many in the last minute. */
   allowPrepare(now: number): boolean {
     this.sql.exec("DELETE FROM prepares WHERE at <= ?", now - 60_000);
     const n = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM prepares").one().n;

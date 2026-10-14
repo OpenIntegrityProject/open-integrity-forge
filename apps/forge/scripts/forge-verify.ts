@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // forge-verify: check a forge repository against its own policy, with no
-// server. It reads a clone on disk, or clones a remote into memory. It runs
-// the same verifier as the forge Worker. Node 23.6 or later runs it as is.
+// server. It reads a clone or a bare repository on disk, or clones a remote
+// into memory. It uses the same verifier as the forge Worker. Node 23.6 or
+// later runs this TypeScript file with no build step.
 //
 //   node scripts/forge-verify.ts <path or URL> [--repo <inception id>] [--ref main] [--token <token>] [--json]
 //
-// It exits 0 when every commit verifies and 1 when one does not.
+// It exits with 0 when the history verifies, 1 when it does not, and 2 on an error.
 
 import * as fs from "node:fs";
 import { resolve as resolvePath } from "node:path";

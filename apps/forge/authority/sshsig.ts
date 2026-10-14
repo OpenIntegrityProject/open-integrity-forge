@@ -55,7 +55,7 @@ export class Reader {
 }
 
 /** The SSH wire form of an Ed25519 public key. */
-export function publicKeyBlob(raw: Uint8Array): Uint8Array {
+function publicKeyBlob(raw: Uint8Array): Uint8Array {
   if (raw.length !== 32) throw new Error("an Ed25519 public key has 32 bytes");
   return concat(sshString(KEY_TYPE), sshString(raw));
 }
@@ -95,7 +95,7 @@ export function armor(blob: Uint8Array): string {
   return `${BEGIN}\n${body}\n${END}\n`;
 }
 
-/** A new Ed25519 key pair for SSH signatures. The private key can be exported, so a Durable Object can keep it. */
+/** A new Ed25519 key pair for SSH signatures. The private key is extractable, so a Durable Object can keep it. */
 export async function generateKey(): Promise<{ privateKey: CryptoKey; publicKey: Uint8Array }> {
   const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as unknown as { privateKey: CryptoKey; publicKey: CryptoKey };
   const publicKey = new Uint8Array((await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer);
@@ -125,7 +125,7 @@ export async function sign(
   return armor(blob);
 }
 
-export interface ParsedSignature {
+interface ParsedSignature {
   publicKey: Uint8Array;
   namespace: string;
   hash: string;
@@ -133,7 +133,7 @@ export interface ParsedSignature {
 }
 
 /** Read an armored SSH signature. Throws an error if it is not one, or if its key is not Ed25519. */
-export function parseSignature(armored: string): ParsedSignature {
+function parseSignature(armored: string): ParsedSignature {
   const text = armored.trim();
   if (!text.startsWith(BEGIN) || !text.endsWith(END)) throw new Error("not an SSH signature");
   const reader = new Reader(fromBase64(text.slice(BEGIN.length, -END.length)));

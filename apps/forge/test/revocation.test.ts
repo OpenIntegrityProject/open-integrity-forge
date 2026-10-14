@@ -22,7 +22,7 @@ describe("revoking an agent's key", () => {
     expect(state.agents.find((a) => a.id === "bo")!.tokenExpiresAt).toBeNull();
     expect(state.history?.ok).toBe(true);
     expect(state.history?.commits.at(-1)?.subject).toBe("Revoke the key of Bo");
-    // Bo's proposal was signed before the revocation, so it still verifies, now with R6 in its report.
+    // Bo signed his proposal before the revocation, so the proposal is still valid. Its report now includes R6.
     const boProposal = state.proposals.find((p) => p.agentId === "bo")!;
     expect(boProposal.status).toBe("ready");
     expect(boProposal.report!.commits[0]!.rules.find((r) => r.rule === "R6")).toMatchObject({ ok: true });

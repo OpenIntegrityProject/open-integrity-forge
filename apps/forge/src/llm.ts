@@ -1,8 +1,9 @@
-// An agent task written by Claude: a short note on a topic a person gives. The
-// model sees the topic and the notes that exist; it never sees a key, a token
-// or the policy, and it does not choose the path or sign anything. The agent
-// writes what the model returns, signs it with its own key, and proposes it,
-// so the rules check the model's work as they check any other.
+// An agent task that Claude writes: a short note on a topic that a person
+// gives. The model sees the topic and the names of the notes that exist. It
+// never sees a key, a token or the policy. It does not choose the path or sign
+// anything. The agent writes what the model returns, signs it with its own key
+// and proposes it. Thus the rules check the work of the model as they check
+// all other work.
 
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -29,17 +30,17 @@ const NOTE_SCHEMA = {
 const SYSTEM = `You write short notes for a small repository of notes on Gordian ideas: independence, privacy, resilience and openness in digital identity.
 Write plainly, for a developer audience, with no marketing tone. Do not invent facts about real people or products.`;
 
-/** The part of the Anthropic client this module uses, so a test can stand in for it. */
+/** The part of the Anthropic client that this module uses, so that a test can replace it. */
 export type NoteClient = Pick<Anthropic["beta"]["messages"], "create">;
 
 export class NoteRefused extends Error {}
 
-/** Ask Claude for a note on `topic`. Throws NoteRefused if the model declines, even after the fallback. */
+/** Ask Claude for a note on `topic`. Throws `NoteRefused` if the model and the fallback model both refuse. */
 export async function writeNote(client: NoteClient, input: { topic: string; agentName: string; existing: string[] }): Promise<Note> {
   const response = (await client.create({
     model: NOTE_MODEL,
     max_tokens: 16000,
-    // Server-side fallback: a declined request runs again on the model Anthropic recommends for that case.
+    // Server-side fallback: if the model refuses, the request runs again on the model that Anthropic recommends for that case.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "low", format: { type: "json_schema", schema: NOTE_SCHEMA } },

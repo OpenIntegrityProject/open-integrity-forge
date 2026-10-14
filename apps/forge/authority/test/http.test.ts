@@ -1,6 +1,6 @@
-// The Git over HTTPS path the Artifacts host uses, against a real git server:
-// `git http-backend` behind a small Node server that requires a token, as
-// Artifacts does. Clone, fetch and push go through isomorphic-git's HTTP client.
+// The Git over HTTPS path that the Artifacts host uses, against a real git
+// server: `git http-backend` behind a small Node server that requires a token,
+// as Artifacts does. Clone, fetch and push use the HTTP client of isomorphic-git.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -47,7 +47,7 @@ describe("Git over HTTP with a token", () => {
     await pushHttp(h.repo, project, "refs/heads/main", "refs/heads/main");
     await pushHttp(h.repo, fork, "refs/heads/ada", "refs/heads/main");
 
-    // A fresh workspace, as the Worker has for each request.
+    // A new workspace, as the Worker has for each request.
     const fresh = await memoryRepo();
     await cloneHttp(fresh, project);
     const head = await fetchHttp(fresh, fork, "main", "refs/forks/ada");
@@ -59,7 +59,7 @@ describe("Git over HTTP with a token", () => {
     await pushHttp(h.repo, project, "refs/heads/main", "refs/heads/main");
     const again = await memoryRepo();
     await cloneHttp(again, project);
-    // The promotion is signed as a whole by the passkey, and the signature survives the round trip.
+    // The passkey signs the whole promotion commit, and the signature stays correct after the round trip.
     const back = await readCommit(again, promoted);
     expect((await verifyWebauthn(back.signature!, back.payload)).ok).toBe(true);
     expect((await readCommit(again, work)).signature).toContain("BEGIN SSH SIGNATURE");

@@ -12,7 +12,7 @@ describe("a conflict", () => {
     must(await leo.forge.approve(must(await leo.forge.prepareAgents(id, ["Ada", "Bo"]))));
     await waitFor(leo, id, (s) => s.proposals.filter((p) => p.status === "ready").length === 2, "the first proposals");
 
-    // Without an Anthropic API key, agents cannot write with Claude, and the page is told so.
+    // Without an Anthropic API key, agents cannot write with Claude, and the project state tells the page.
     expect(created.llm).toBe(false);
     expect(await leo.forge.give(id, "ada", "llm-note", "key rotation")).toMatchObject({ result: "refused", status: 409, refusal: { error: "no-llm" } });
 

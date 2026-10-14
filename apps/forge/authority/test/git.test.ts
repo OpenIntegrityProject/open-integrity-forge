@@ -36,7 +36,7 @@ describe("git on disk", () => {
       "docs/a/b.md",
       "z.md",
     ]);
-    // Our parser gives the same payload git signs: git cat-file shows the raw object.
+    // Our parser gives the same payload that git signs. `git cat-file` shows the raw object.
     const raw = execFileSync("git", ["cat-file", "commit", second], { cwd: dir }).toString();
     expect(parseCommit(second, raw).payload).toBe((await readCommit(repo, second)).payload);
     expect(raw).toContain("gpgsig -----BEGIN SSH SIGNATURE-----");

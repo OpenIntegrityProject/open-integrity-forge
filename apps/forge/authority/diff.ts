@@ -42,7 +42,7 @@ export function diffLines(before: string, after: string, context = 2): DiffLine[
     }
   }
   // Keep the changed lines and their context. A gap between two hunks is one "…" line.
-  const keep = all.map((line, n) => all.slice(Math.max(0, n - context), n + context + 1).some((l) => l.kind !== " "));
+  const keep = all.map((_, n) => all.slice(Math.max(0, n - context), n + context + 1).some((l) => l.kind !== " "));
   const out: DiffLine[] = [];
   for (const [n, line] of all.entries()) {
     if (keep[n]) out.push(line);
