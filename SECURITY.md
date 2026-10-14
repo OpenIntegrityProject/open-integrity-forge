@@ -38,3 +38,15 @@ Verification does not depend on the forge. Anyone can check every approval from 
 | A passkey belongs to the forge's domain, its relying-party ID. | A forge that moves to another domain cannot use its promoters' existing passkeys. Everything they signed still verifies. | Enrolling new promoter keys by a rule change before the move. |
 | Git names objects by SHA-1. | An approval names the tree and parents by SHA-1, so it is as strong as Git's collision-detecting SHA-1. The inception commit is empty for this reason. | SHA-256 repositories. |
 | A release approval does not cover the tag message. | The message of a release tag can change without breaking its approvals. | Binding the tag message into the approval. |
+
+## Reporting a vulnerability
+
+Please report suspected security vulnerabilities in private via email to ChristopherA@BlockchainCommons.com (do not use this email for support). Please do not create publicly viewable issues for suspected security vulnerabilities.
+
+The following key may be used to communicate sensitive information:
+
+| Name | Fingerprint |
+| --- | --- |
+| Christopher Allen | FDFE 14A5 4ECB 30FC 5D22  74EF F8D3 6C91 3574 05ED |
+
+Import it with `gpg --recv-keys "<fingerprint>"`, keeping the quotes around a fingerprint that contains spaces.
