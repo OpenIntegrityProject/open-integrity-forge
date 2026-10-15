@@ -425,8 +425,9 @@ const story = new Story({
   },
   away: () => document.hidden || document.querySelector("dialog[open]") !== null,
   waitFor,
-  createProject: () => createProject((byId<HTMLInputElement>("project-name").value || "gordian-notes").trim()),
-  admit: () => (current?.repoId ? admit() : incept()),
+  // A project whose inception commit exists but whose first policy does not yet finishes its inception.
+  createProject: () => (current?.repoId ? incept() : createProject((byId<HTMLInputElement>("project-name").value || "gordian-notes").trim())),
+  admit: () => (current?.policy ? admit() : incept()),
   tempt,
   promote,
   verify,
