@@ -209,6 +209,39 @@ test("the story plays from a new project to the commands, stopping only for appr
   expect(overflow).toBe(0);
 });
 
+test("keep going plays the rest of the tour: a conflict and a redo, a release, a revocation and an envelope", async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await addAuthenticator(page);
+  await page.goto("/");
+  await register(page);
+  await page.getByRole("button", { name: "Play the story" }).click();
+  const story = page.locator("#story");
+  await approve(page, "Sign the inception commit");
+  await approve(page, "Approve the first policy");
+  await approve(page, "Approve the new rules");
+  await approve(page, "Approve this promotion");
+  await expect(story).toContainText("The end", { timeout: 90_000 });
+
+  await story.getByRole("button", { name: "Keep going" }).click();
+  await expect(story).toContainText("Keep going: step 1 of 7");
+  // Ada's new title, then Bo's, which conflicts with main and is redone on it.
+  await approve(page, "Approve this promotion");
+  await expect(story).toContainText("it conflicts with main", { timeout: 60_000 });
+  await expect(page.locator("#proposals")).toContainText("README.md");
+  await approve(page, "Approve this promotion");
+  await approve(page, "Approve this release");
+  await expect(page.locator("#history")).toContainText("v1.0.0");
+  await approve(page, "Approve the new rules");
+  await expect(page.locator(".fresh")).toContainText("verify", { timeout: 60_000 });
+  // The last step opens the newest commit with its approval as a Gordian Envelope.
+  const envelope = page.locator("#commit details.envelope");
+  await expect(envelope).toHaveAttribute("open", "", { timeout: 60_000 });
+  await expect(envelope).toContainText("ur:envelope");
+  await page.locator("#commit-close").click();
+  await expect(story).toContainText("The end of the tour", { timeout: 30_000 });
+});
+
 test("the story holds while the person is away from it, and shows its place again on return", async ({ page }) => {
   test.setTimeout(240_000);
   await page.emulateMedia({ reducedMotion: "reduce" });

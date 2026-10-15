@@ -1,6 +1,8 @@
 // The story: the steps of the demo in order, with a caption for each step. It
 // does the steps itself, and stops at each approval so that the person can
-// read the change and use their passkey. The story holds at its next action in
+// read the change and use their passkey. At its end, "Keep going" plays the
+// rest of the tour the video shows: a conflict and a redo, a release, a
+// revocation, and an approval as a Gordian Envelope. The story holds at its next action in
 // four conditions. These are a pause, another project on the page, an open
 // pane or sheet, and a hidden tab. When the hold ends, the story shows its
 // place again.
@@ -26,6 +28,12 @@ interface StoryActions {
   commands(): Promise<void>;
   /** Scroll to a part of the page, open it, and move the focus to its region. */
   spotlight(selector: string): void;
+  give(agentId: string, task: string): Promise<void>;
+  redo(proposalId: string): Promise<boolean>;
+  release(name: string): Promise<boolean>;
+  revoke(agentId: string): Promise<boolean>;
+  /** Open the sheet of the newest commit of main, with its approval as a Gordian Envelope. */
+  showEnvelope(): Promise<void>;
 }
 
 /** The actions a step uses. Each one waits while the story holds. */
@@ -42,6 +50,11 @@ interface StepActions {
   verify(): Promise<void>;
   commands(): Promise<void>;
   spotlight(selector: string): Promise<void>;
+  give(agentId: string, task: string): Promise<void>;
+  redo(proposalId: string): Promise<boolean>;
+  release(name: string): Promise<boolean>;
+  revoke(agentId: string): Promise<boolean>;
+  showEnvelope(): Promise<void>;
 }
 
 interface Step {
@@ -147,6 +160,92 @@ const STEPS: Step[] = [
   },
 ];
 
+const retitle = (agentId: string) => (p: { agentId: string; taskId: string }) => p.agentId === agentId && p.taskId === "readme-title";
+
+/** The rest of the tour, after the story: "Keep going" plays these. */
+const MORE: Step[] = [
+  {
+    caption: "What if two agents edit the same line? Ada and Bo are both asked to retitle the README.",
+    where: "#proposals",
+    done: (s) => Boolean(s?.proposals.some(retitle("bo"))),
+    async run(a) {
+      await a.spotlight("#agents");
+      await a.give("ada", "readme-title");
+      await a.give("bo", "readme-title");
+      await a.waitFor((s) => s.proposals.filter((p) => p.taskId === "readme-title" && p.status === "ready").length >= 2, 90_000);
+      await a.spotlight("#proposals");
+      await a.pause(2500);
+    },
+  },
+  {
+    caption: "Promote Ada's new title. Your passkey signs the merge commit.",
+    where: "#proposals",
+    done: (s) => Boolean(s?.proposals.some((p) => retitle("ada")(p) && p.status === "promoted")),
+    async run(a) {
+      const ada = a.state()?.proposals.find((p) => retitle("ada")(p) && p.status === "ready");
+      if (!ada) return true;
+      const promoted = await a.promote(ada.id);
+      if (promoted) await a.spotlight("#history");
+      return promoted;
+    },
+  },
+  {
+    caption: "Bo's title no longer merges with the new main, so the repository rejects it, and the page says why: it conflicts with main.",
+    where: "#proposals",
+    done: (s) => Boolean(s?.proposals.some((p) => retitle("bo")(p) && p.redoneAt !== null)),
+    async run(a) {
+      await a.waitFor((s) => s.proposals.some((p) => retitle("bo")(p) && p.status === "rejected"), 30_000);
+      await a.spotlight("#proposals");
+      await a.pause(5000);
+    },
+  },
+  {
+    caption: "Bo redoes its change on the new main. It passes, and your passkey promotes it.",
+    where: "#proposals",
+    done: (s) => Boolean(s?.proposals.some((p) => retitle("bo")(p) && p.status === "promoted")),
+    async run(a) {
+      const rejected = a.state()?.proposals.find((p) => retitle("bo")(p) && p.status === "rejected" && p.redoneAt === null);
+      if (rejected && !(await a.redo(rejected.id))) return false;
+      const redo = await a.waitFor((s) => s.proposals.some((p) => retitle("bo")(p) && p.status === "ready"), 90_000);
+      await a.spotlight("#proposals");
+      await a.pause(2000);
+      const promoted = await a.promote(redo.proposals.find((p) => retitle("bo")(p) && p.status === "ready")!.id);
+      if (promoted) await a.spotlight("#history");
+      return promoted;
+    },
+  },
+  {
+    caption: "Release main as a tag that carries your passkey's approval of exactly that commit, tag name and tree.",
+    where: "#history",
+    done: (s) => Boolean(s?.history?.tags.length),
+    async run(a) {
+      const released = await a.release(`v1.${a.state()?.history?.tags.length ?? 0}.0`);
+      if (released) await a.spotlight("#history");
+      return released;
+    },
+  },
+  {
+    caption: "Revoke Bo's key. From now on its new signatures fail, and everything it signed before still verifies.",
+    where: "#rules",
+    done: (s) => Boolean(s?.policy?.authors.some((k) => k.id === "bo" && k.revokedAt)),
+    async run(a) {
+      await a.spotlight("#rules");
+      const revoked = await a.revoke("bo");
+      if (!revoked) return false;
+      await a.spotlight("#outside");
+      await a.verify();
+      await a.pause(3000);
+    },
+  },
+  {
+    caption: "Each approval can also be read as a Gordian Envelope, Blockchain Commons' format whose parts can be elided without changing its digest. Close the sheet to finish.",
+    async run(a) {
+      await a.showEnvelope();
+      await a.pause(500);
+    },
+  },
+];
+
 /** Why the story holds, or null when it does not hold. */
 type Hold = "paused" | "left" | "away" | null;
 
@@ -163,6 +262,8 @@ export class Story {
   /** True while a step action runs. The action can open its own sheet. When that sheet closes, the story does not show its place again. */
   private acting = false;
   private index = 0;
+  /** The steps of the part that plays: the story, or the rest of the tour. */
+  private steps: Step[] = STEPS;
   /** The part of the page that the story last showed in this step. */
   private spot: string | null = null;
   private hold: Hold = null;
@@ -281,12 +382,17 @@ export class Story {
         this.spot = selector;
         a.spotlight(selector);
       }),
+      give: act((agentId: string, task: string) => a.give(agentId, task)),
+      redo: act((proposalId: string) => a.redo(proposalId)),
+      release: act((name: string) => a.release(name)),
+      revoke: act((agentId: string) => a.revoke(agentId)),
+      showEnvelope: act(() => a.showEnvelope()),
     };
   }
 
   /** Show the part of the page that the current step changes. */
   private showMe() {
-    const target = this.spot ?? STEPS[this.index]?.where;
+    const target = this.spot ?? this.steps[this.index]?.where;
     if (target && this.hold === null) this.actions.spotlight(target);
   }
 
@@ -294,7 +400,7 @@ export class Story {
   private show(index: number, note = "") {
     this.index = index;
     this.spot = null;
-    const step = STEPS[index]!;
+    const step = this.steps[index]!;
     this.note = h("p", { class: "story-note" });
     this.pauseButton = h("button", { type: "button", onclick: () => this.togglePause() });
     this.backButton = h("button", { type: "button", onclick: () => this.actions.open(this.project) }, "Go back to the story");
@@ -302,7 +408,7 @@ export class Story {
     const showMe = step.where ? h("button", { type: "button", onclick: () => this.showMe() }, "Show me") : null;
     fill(
       this.ribbon,
-      h("p", { class: "story-step" }, `Step ${index + 1} of ${STEPS.length}`),
+      h("p", { class: "story-step" }, `${this.steps === MORE ? "Keep going: step" : "Step"} ${index + 1} of ${this.steps.length}`),
       h("p", { class: "story-caption" }, step.caption),
       this.note,
       h("div", { class: "story-controls" }, this.backButton, showMe, this.pauseButton, stop),
@@ -335,14 +441,14 @@ export class Story {
     this.update();
   }
 
-  /** Show a last message, with a button that closes the ribbon. */
-  private end(title: string | null, caption: string) {
+  /** Show a last message, with a button that closes the ribbon, and `more` before it when given. */
+  private end(title: string | null, caption: string, more: HTMLButtonElement | null = null) {
     this.note = this.pauseButton = this.backButton = null;
     fill(
       this.ribbon,
       title ? h("p", { class: "story-step" }, title) : null,
       h("p", { class: "story-caption" }, caption),
-      h("div", { class: "story-controls" }, h("button", { type: "button", onclick: () => this.stop() }, "Close")),
+      h("div", { class: "story-controls" }, more, h("button", { type: "button", onclick: () => this.stop() }, "Close")),
     );
     this.ribbon.hidden = false;
   }
@@ -357,8 +463,10 @@ export class Story {
     this.ribbon.hidden = true;
   }
 
-  async play() {
+  /** Play the story, or with `part` "more", the rest of the tour. */
+  async play(part: "story" | "more" = "story") {
     if (this.running) return;
+    this.steps = part === "more" ? MORE : STEPS;
     const play = new AbortController();
     const signal = play.signal;
     this.running = play;
@@ -370,7 +478,7 @@ export class Story {
     this.watch = setInterval(() => this.check(), POLL_MS);
     const a = this.stepActions(signal);
     try {
-      for (const [index, step] of STEPS.entries()) {
+      for (const [index, step] of this.steps.entries()) {
         await this.held(signal);
         if (step.done?.(a.state())) continue;
         this.show(index);
@@ -384,7 +492,12 @@ export class Story {
         }
       }
       this.finish(play);
-      this.end("The end", "Agents wrote the code. A person promoted it with a passkey. The repository holds the proof, and any clone can check it.");
+      if (part === "more") {
+        this.end("The end of the tour", "Conflicts, releases and revocations are all checked by the same rules in the repository, and every approval is a signature any clone can verify.");
+        return;
+      }
+      const keepGoing = h("button", { type: "button", onclick: () => void this.play("more") }, "Keep going");
+      this.end("The end", "Agents wrote the code. A person promoted it with a passkey. The repository holds the proof, and any clone can check it. Keep going for a conflict and a redo, a release, a revocation and a Gordian Envelope.", keepGoing);
     } catch (error) {
       // A stopped play leaves the ribbon as stop() left it.
       if (signal.aborted) return;

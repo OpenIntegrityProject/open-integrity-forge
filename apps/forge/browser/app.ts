@@ -325,6 +325,42 @@ async function tempt(agentId: string) {
   if (tempted.result !== "ok") say(reason(tempted));
 }
 
+/** Give an agent a task, as the "Ask" buttons do. */
+async function give(agentId: string, task: string) {
+  const id = shownId();
+  if (!id) return;
+  const given = await forge.give(id, agentId, task);
+  if (given.result !== "ok") say(reason(given));
+}
+
+/** Have an agent redo a rejected proposal on the new main. */
+async function redo(proposalId: string): Promise<boolean> {
+  const id = shownId();
+  if (!id) return false;
+  const redone = await forge.redo(id, proposalId);
+  if (redone.result !== "ok") say(reason(redone));
+  return redone.result === "ok";
+}
+
+/** Release main as the tag `name`, with an approval, for the story. */
+async function release(name: string): Promise<boolean> {
+  const id = shownId();
+  if (!id) return false;
+  const state = await approvals.run(() => forge.prepareRelease(id, name));
+  if (state) received(state);
+  return Boolean(state);
+}
+
+/** Open the sheet of the newest commit of main, with its approval shown as a Gordian Envelope. */
+async function showEnvelope() {
+  if (!current?.mainHead) return;
+  await commits.open(current.id, current.mainHead, current.repoId, (id) => current?.agents.find((a) => a.id === id)?.name ?? null);
+  const envelope = document.querySelector<HTMLDetailsElement>("#commit details.envelope");
+  if (!envelope) return;
+  envelope.open = true;
+  envelope.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+}
+
 async function revoke(agentId: string): Promise<boolean> {
   const id = shownId();
   if (!id) return false;
@@ -433,6 +469,11 @@ const story = new Story({
   verify,
   commands,
   spotlight,
+  give,
+  redo,
+  release,
+  revoke,
+  showEnvelope,
 });
 
 // --- events ------------------------------------------------------------------------
