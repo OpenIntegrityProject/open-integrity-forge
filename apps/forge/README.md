@@ -19,7 +19,7 @@ The forge is built on this repository's passkey library and reuses the demo's si
 5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree, and the message, as an SSH signature that `git verify-commit` checks.
 6. **Anyone checks it anywhere.** A fresh clone on a laptop, or a mirror on any Git host, gives the same answer, with no forge in the loop.
 
-"Play the story" on the page walks through these steps, and stops where your passkey is needed. If you open a commit, go to another project or switch tabs, the story waits, and shows its place again when you come back.
+"Play the story" on the page walks through these steps, and stops where your passkey is needed. If you open a commit, go to another project or switch tabs, the story waits, and shows its place again when you come back. At its end, "Keep going" plays the rest of the tour in the demo video: two agents conflict and the second redoes its change, a release, Bo's key revoked, and the newest approval opened as a Gordian Envelope.
 
 Beyond the story, the page also lets you:
 
