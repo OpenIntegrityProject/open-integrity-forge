@@ -270,8 +270,37 @@
         </div>
       </details>
 
-      <!-- The forge has no operator tools. The settings pane still reads this element. -->
-      <section id="operator" hidden></section>
+      <section id="operator" hidden>
+        <div class="section-heading">
+          <h3>Operator</h3>
+          <button id="operator-info-toggle" class="info-toggle" type="button" aria-label="About the operator actions" aria-expanded="false" aria-controls="operator-info">&#9432;</button>
+        </div>
+        <p id="operator-info" hidden>A rebind link lets the member add a new passkey. Send it yourself once you've confirmed who they are; it works once, within 24 hours, and leaves their old passkeys, sessions and codes in place. Suspend signs the member out everywhere and blocks sign-in, recovery and rebind links until you Resume. Remove does the same for good and retires their member name, so nobody can register it again; it can't be undone, and it refuses an operator. Allow name again lets anyone register a retired name, on a new record; the removed member stays removed. Every action here is logged.</p>
+        <form id="operator-form">
+          <label>
+            Member name
+            <input name="memberName" required />
+          </label>
+          <button type="submit">Look up</button>
+        </form>
+        <div id="operator-member" hidden>
+          <table>
+            <tbody id="operator-summary"></tbody>
+          </table>
+          <table>
+            <thead><tr><th>When</th><th>Action</th><th>Operator</th></tr></thead>
+            <tbody id="operator-entries"></tbody>
+          </table>
+        </div>
+        <div id="operator-actions">
+          <button type="button" value="rebind" disabled>Create rebind link</button>
+          <button type="button" value="suspend" disabled>Suspend</button>
+          <button type="button" value="resume" disabled>Resume</button>
+          <button type="button" value="allow-name" disabled>Allow name again</button>
+          <button class="danger" type="button" value="remove" disabled>Remove</button>
+        </div>
+        <p id="operator-result"></p>
+      </section>
     </dialog>
   </body>
 </html>
