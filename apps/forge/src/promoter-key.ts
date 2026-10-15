@@ -1,14 +1,14 @@
-// The public key of a new passkey, read from its registration response. The
-// browser sends the response it posted to /auth/register/verify or to
-// /me/credentials/enrol/verify. The attestation carries the COSE public key.
+// The public key of a new passkey, from its registration response. The
+// browser sends the response that it posted to /auth/register/verify or to
+// /me/credentials/enrol/verify. The attestation holds the COSE public key.
 
 import { decodeAttestationObject, decodeCredentialPublicKey, parseAuthenticatorData } from "@simplewebauthn/server/helpers";
 import { equalBytes, fromBase64Url, sha256, toBase64Url } from "../authority/bytes.ts";
 import type { PublicJwk } from "../authority/policy.ts";
 
-/** The JWK of a COSE public key. Only ES256 (P-256) and EdDSA (Ed25519) keys are accepted. */
-export function coseToJwk(cose: Uint8Array): { alg: -7 | -8; jwk: PublicJwk } {
-  // The helper types the map by COSE key name; read it as a plain map of numbers.
+/** The JWK of a COSE public key. It accepts only ES256 (P-256) and EdDSA (Ed25519) keys. */
+function coseToJwk(cose: Uint8Array): { alg: -7 | -8; jwk: PublicJwk } {
+  // The helper gives the map a type with COSE key names. Read it as a plain map with number keys.
   const key = decodeCredentialPublicKey(cose as Uint8Array<ArrayBuffer>) as unknown as Map<number, unknown>;
   const alg = key.get(3);
   const x = key.get(-2);
@@ -25,16 +25,16 @@ export function coseToJwk(cose: Uint8Array): { alg: -7 | -8; jwk: PublicJwk } {
   throw new Error(`the COSE algorithm ${String(alg)} is not ES256 or EdDSA`);
 }
 
-export interface CapturedKey {
+interface CapturedKey {
   credentialId: string;
   alg: -7 | -8;
   publicKey: PublicJwk;
 }
 
 /**
- * The credential id and public key in a registration response, made for
- * `rpId`. Throws an error when the response does not hold one, or holds one
- * for another relying party.
+ * The credential id and public key in a registration response for `rpId`.
+ * Throws an error when the response does not hold one, or holds one for
+ * another relying party.
  */
 export async function keyFromRegistration(response: unknown, rpId: string): Promise<CapturedKey> {
   const r = response as { id?: unknown; response?: { attestationObject?: unknown } } | null;

@@ -1,15 +1,16 @@
-// The stage: the history band and the three regions under it (the rules in
-// the repository, the agents, the proposals), and the strip that checks the
-// repository outside the forge. Each render draws from one project state.
+// The stage: the history band, the three regions under it, and the strip that
+// checks the repository outside the forge. The regions are the rules in the
+// repository, the agents and the proposals. Each render uses one project state.
 
 import type { AgentState, FreshVerify, Outside, ProjectState, ProposalState, PushAccess } from "./view-types.ts";
-import { clock, laneClass, plural, remaining, short, shortFingerprint } from "./format.ts";
+import { copyButton, copyIconButton } from "./copy.ts";
+import { clock, didRepo, laneClass, plural, remaining, short, shortDidRepo, shortFingerprint } from "./format.ts";
 import { HistoryGraph, legend } from "./graph.ts";
 import { byId, fill, h, reducedMotion } from "./h.ts";
 import { seal } from "./seal.ts";
 import { fileDiff, mono, ruleList } from "./sheets.ts";
 
-export interface StageActions {
+interface StageActions {
   admit(): void;
   tempt(agentId: string): void;
   revoke(agentId: string): void;
@@ -35,7 +36,7 @@ const STATUS_WORD: Record<ProposalState["status"], string> = {
   promoted: "Promoted",
 };
 
-/** A live countdown to `until`; the ticker in `tick` keeps it current. */
+/** A live countdown to `until`. `tick` updates it each second. */
 function countdown(until: number, expired: string) {
   return h("span", { class: "countdown", "data-until": until, "data-expired": expired }, remaining(until - Date.now()));
 }
@@ -74,17 +75,17 @@ const AGENT_WORD: Record<AgentStatus, string> = {
 export class Stage {
   private readonly graph: HistoryGraph;
   private readonly actions: StageActions;
-  /** The status each proposal had at the last render, to animate only what changed. */
+  /** The status of each proposal at the last render. The stage animates only a proposal whose status changed. */
   private shown = new Map<string, ProposalState["status"]>();
   private firstRender = true;
   fresh: FreshVerify | null = null;
   outside: Outside | null = null;
   verifying = false;
   mirroring = false;
-  /** Push commands a person asked for, by laptop key id. */
+  /** The push commands that a person asked for, by the id of the laptop key. */
   access = new Map<string, PushAccess>();
 
-  /** Whether a passkey action runs; the buttons that start one stay disabled meanwhile. */
+  /** True while a passkey action runs. During that time, the buttons that start a passkey action stay disabled. */
   private readonly busy: () => boolean;
 
   constructor(busy: () => boolean, actions: StageActions) {
@@ -98,12 +99,22 @@ export class Stage {
     this.firstRender = true;
     this.fresh = null;
     this.outside = null;
+    byId("graph").scrollLeft = 0;
   }
 
   render(state: ProjectState) {
-    // Keep what the person opened, and where the focus was, across the redraw.
-    const open = new Set([...document.querySelectorAll<HTMLDetailsElement>("#stage details[data-key][open]")].map((d) => d.dataset.key));
-    const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.key;
+    // Keep the open details, the typed text, the scroll position and the focus when the stage draws again.
+    const open = new Map([...document.querySelectorAll<HTMLDetailsElement>("#stage details[data-key]")].map((d) => [d.dataset.key, d.open]));
+    const active = document.activeElement as HTMLElement | null;
+    const focusKey = active?.dataset?.key;
+    const typed = new Map(
+      [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("#stage input[id], #stage textarea[id]")]
+        .filter((f) => f.value !== f.defaultValue)
+        .map((f) => [f.id, f.value]),
+    );
+    const field = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active : null;
+    const caret = field?.closest("#stage") && field.id ? { id: field.id, start: field.selectionStart, end: field.selectionEnd } : null;
+    const graphLeft = byId("graph").scrollLeft;
 
     this.history(state);
     this.rules(state);
@@ -111,20 +122,45 @@ export class Stage {
     this.proposals(state);
     this.outsideStrip(state);
 
-    for (const d of document.querySelectorAll<HTMLDetailsElement>("#stage details[data-key]")) if (open.has(d.dataset.key)) d.open = true;
+    for (const d of document.querySelectorAll<HTMLDetailsElement>("#stage details[data-key]")) d.open = open.get(d.dataset.key) ?? d.open;
     if (focusKey) document.querySelector<HTMLElement>(`#stage [data-key="${CSS.escape(focusKey)}"]`)?.focus();
+    for (const [id, value] of typed) {
+      const f = document.getElementById(id);
+      if (f instanceof HTMLInputElement || f instanceof HTMLTextAreaElement) f.value = value;
+    }
+    if (caret) {
+      const f = document.getElementById(caret.id);
+      if ((f instanceof HTMLInputElement || f instanceof HTMLTextAreaElement) && f !== document.activeElement) {
+        f.focus({ preventScroll: true });
+        f.setSelectionRange(caret.start, caret.end);
+      }
+    }
+    byId("graph").scrollLeft = graphLeft;
     this.firstRender = false;
     tick();
   }
 
   private history(state: ProjectState) {
     const report = state.history;
-    fill(byId("repo-meta"), 
-      h("span", null, "Repository id ", state.repoId ? mono(short(state.repoId), state.repoId) : "not yet"),
-      h("span", null, state.repo.host === "artifacts" ? "Stored in Cloudflare Artifacts" : "Stored in local Durable Objects"),
+    // The result of the verifier is beside the heading. The line under it has the full did:repo address and the storage.
+    fill(
+      byId("repo-verdict"),
       report
         ? h("span", { class: report.ok ? "verdict-ok" : "verdict-fail" }, report.ok ? `${report.commits.length} of ${report.commits.length} commits verify` : report.summary)
         : null,
+    );
+    fill(
+      byId("repo-meta"),
+      state.repoId
+        ? h(
+            "span",
+            { class: "repo-did" },
+            "Repository ",
+            mono(didRepo(state.repoId)),
+            copyIconButton(didRepo(state.repoId), "Copy the did:repo address of the repository"),
+          )
+        : h("span", null, "Repository: no did:repo yet"),
+      h("span", { class: "repo-store" }, state.repo.host === "artifacts" ? "Stored in Cloudflare Artifacts" : "Stored in local Durable Objects"),
     );
     const head = byId("history").querySelector(".band-head")!;
     if (!head.querySelector(".legend")) head.append(legend());
@@ -181,7 +217,7 @@ export class Stage {
                 h(
                   "li",
                   { class: "key key-promoter" },
-                  p.kind === "webauthn" ? seal({ size: 34, detail: "badge", label: "" }) : h("span", { class: "swatch" }),
+                  p.kind === "webauthn" ? seal({ size: 34, label: "" }) : h("span", { class: "swatch" }),
                   h("div", null, h("strong", null, p.id), h("span", { class: "muted" }, p.kind === "webauthn" ? ` passkey ${p.label ?? ""}` : " SSH key")),
                 ),
               ),
@@ -251,14 +287,14 @@ export class Stage {
               access.pushEvents ? "The forge hears the push by itself." : "This forge does not subscribe to push events by itself: run scripts/subscribe-pushes.ts for the fork first.",
             ),
             access.commands.map((c) =>
-              h("div", { class: "command" }, h("pre", { class: "code", tabindex: 0 }, c), h("button", { type: "button", class: "copy", onclick: () => void navigator.clipboard.writeText(c) }, "Copy")),
+              h("div", { class: "command" }, h("pre", { class: "code", tabindex: 0 }, c), copyButton(c)),
             ),
           )
         : null,
     );
   }
 
-  /** The form that admits a person's own SSH key, shown until one is admitted. */
+  /** The form that admits the SSH key of a person. The stage shows it until the forge admits a key of a person. */
   private personForm(state: ProjectState) {
     if (!state.repoId || state.agents.some((a) => a.kind === "person")) return null;
     const field = h("textarea", { id: "laptop-key", rows: 2, spellcheck: "false", placeholder: "ssh-ed25519 AAAA… you@laptop" });
@@ -358,7 +394,8 @@ export class Stage {
       return;
     }
     const animate = !this.firstRender && !reducedMotion();
-    // Newest first, but the ones to act on stay at the top.
+    // The proposals to act on and the proposals in verification come first, oldest first.
+    // Then the rejected proposals and the promoted proposals come, newest first.
     const order = (p: ProposalState) => (p.status === "ready" || p.status === "stale" ? 0 : p.status === "rejected" ? 1 : p.status === "verifying" ? 0 : 2);
     const list = [...state.proposals].sort((a, b) => order(a) - order(b) || (order(a) === 0 ? a.createdAt - b.createdAt : b.createdAt - a.createdAt));
     fill(body, 
@@ -368,7 +405,8 @@ export class Stage {
         this.shown.set(p.id, p.status);
         const report = p.report;
         const failing = report?.commits.flatMap((c) => c.rules).find((r) => !r.ok) ?? (report && !report.merge.ok ? report.merge : null);
-        // One chip per rule, in rule order; a rule that fails on any commit shows as failed.
+        // One chip for each rule, in rule order, with the merge rule `M` last.
+        // If a rule fails on one commit or more, its chip shows a failure.
         const byRule = new Map<string, { rule: string; ok: boolean; reason: string }>();
         for (const r of report ? [...report.commits.flatMap((c) => c.rules), report.merge] : []) {
           const seen = byRule.get(r.rule);
@@ -415,7 +453,7 @@ export class Stage {
             h("summary", null, p.status === "rejected" ? "Why?" : "Rules and changes"),
             report ? report.commits.map((c) => h("div", { class: "why-commit" }, h("p", { class: "small" }, mono(short(c.oid), c.oid), " ", c.subject), ruleList(c.rules))) : null,
             report ? ruleList([report.merge]) : null,
-            p.changes.length ? h("div", { class: "why-files" }, h("h4", null, plural(p.changes.length, "file"), " would change in main"), p.changes.map((f) => fileDiff(f, f.path.endsWith("policy.json")))) : null,
+            p.changes.length ? h("div", { class: "why-files" }, h("h4", null, plural(p.changes.length, "file"), " would change in main"), p.changes.map((f) => fileDiff(f, f.path.endsWith("policy.json"), `diff-${p.id}-${f.path}`))) : null,
           ),
           p.status === "rejected" && report && !report.merge.ok && report.commits.every((c) => c.ok)
             ? p.redoneAt
@@ -478,7 +516,13 @@ export class Stage {
             "div",
             { class: "fresh" },
             h("p", { class: fresh.report.ok ? "verdict-ok" : "verdict-fail" }, fresh.report.summary),
-            h("p", { class: "muted small" }, `Cloned from nothing at ${clock(fresh.at)}, with the repository id pinned to `, mono(short(fresh.report.repoId ?? ""), fresh.report.repoId ?? ""), "."),
+            h(
+              "p",
+              { class: "muted small" },
+              `Cloned from nothing at ${clock(fresh.at)}, with the repository pinned to `,
+              fresh.report.repoId ? mono(shortDidRepo(fresh.report.repoId), didRepo(fresh.report.repoId)) : "",
+              ".",
+            ),
             h(
               "ol",
               { class: "fresh-list" },
@@ -499,7 +543,7 @@ export class Stage {
                 "div",
                 { class: "command" },
                 h("pre", { class: "code", tabindex: 0 }, c),
-                h("button", { type: "button", class: "copy", onclick: () => void navigator.clipboard.writeText(c) }, "Copy"),
+                copyButton(c),
               ),
             ),
           )

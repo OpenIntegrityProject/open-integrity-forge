@@ -10,14 +10,14 @@ The forge is built on this repository's passkey library and reuses the demo's si
 
 ## What it shows
 
-1. **Your passkey signs the first commit.** It is an empty Open Integrity inception commit whose committer is your passkey's SSH key fingerprint, signed as an SSH signature that `git verify-commit` checks. Its hash becomes the repository's id. The next commit, which your passkey also approves, sets the policy and names your passkey as the only promoter.
+1. **Your passkey signs the first commit.** It is an empty Open Integrity inception commit whose committer is your passkey's SSH key fingerprint, signed as an SSH signature that `git verify-commit` checks. Its hash becomes the repository's id and its decentralized identifier, `did:repo:<hash>`, which the History band shows with a copy button. The next commit, which your passkey also approves, sets the policy and names your passkey as the only promoter.
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. The new rules need your approval too.
 3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. Every proposal is checked against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.
 5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree, and the message, as an SSH signature that `git verify-commit` checks.
 6. **Anyone checks it anywhere.** A fresh clone on a laptop, or a mirror on any Git host, gives the same answer, with no forge in the loop.
 
-"Play the story" on the page walks through these steps, and stops where your passkey is needed.
+"Play the story" on the page walks through these steps, and stops where your passkey is needed. If you open a commit, go to another project or switch tabs, the story waits, and shows its place again when you come back.
 
 Beyond the story, the page also lets you:
 
@@ -90,7 +90,7 @@ npm run smoke -w forge -- http://localhost:8787 --runs 2   # the whole story ove
 | `authority/test/`, `scripts/*.test.ts` | Every rule, SSH signatures against `ssh-keygen` and `git verify-commit`, approvals, Git over HTTP against `git http-backend`, the config check, the cleanup script | Node |
 | `test/` | Routes, guards, promoter-key capture, approvals, agents, proposals, push events, the event stream, the verifier pin | The Workers runtime, with the local repo host |
 | `e2e/` | The page with a virtual authenticator; a real `git clone`, `forge-verify` and `git log --show-signature` on it; the mirror and its workflow steps | Chromium against `wrangler dev` |
-| `e2e/a11y.spec.ts` | An axe audit (WCAG 2.1 AA) of every view in light and dark mode | Chromium against `wrangler dev` |
+| `e2e/a11y.spec.ts` | An axe audit (WCAG 2.1 AA) of every view, with the browser set to light and to dark | Chromium against `wrangler dev` |
 | `scripts/smoke.ts` | The whole story over HTTP, with a release and a revocation | Any running forge, local or deployed |
 | `scripts/push-check.ts`, `scripts/laptop-check.ts` | A push from outside the forge, and a person's signed push from a laptop, through Artifacts push events | The deployed forge, with wrangler logged in |
 

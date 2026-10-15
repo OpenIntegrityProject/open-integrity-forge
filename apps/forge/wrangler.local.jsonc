@@ -1,14 +1,15 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  // Local development and tests: repositories live in LocalRepo objects, so no
-  // Artifacts binding and no Cloudflare login are needed. wrangler.jsonc is the
-  // deployed configuration; scripts/config.test.ts keeps the two in step.
+  // Local development and tests: the repositories are in LocalRepo objects, so
+  // this configuration needs no Artifacts binding and no Cloudflare login.
+  // wrangler.jsonc is the deployed configuration. scripts/config.test.ts checks
+  // that the two configurations agree.
   "name": "forge-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
   // isomorphic-git reads Buffer and a few other Node globals.
   "compatibility_flags": ["nodejs_compat"],
-  // Bundles browser/app.ts into public/app.js before dev and deploy.
+  // `npm run build` bundles the verifier, the page script, the stylesheet and the fonts into public/ before dev and deploy.
   "build": { "command": "npm run build", "watch_dir": ["browser", "authority", "scripts"] },
   "assets": {
     "directory": "public",
@@ -30,7 +31,7 @@
     "MIRROR_OWNER": "",
     "MIRROR_GIT_BASE": "https://github.com",
     "MIRROR_API": "https://api.github.com",
-    // Push subscriptions: the forge makes one per repository when the CF_API_TOKEN secret is set.
+    // Push subscriptions: with the CF_API_TOKEN secret and REPO_HOST "artifacts", the forge makes one for each repository.
     "CF_ACCOUNT_ID": "cb3207d4e31a99ec82c9670b3b70dde0",
     "PUSH_QUEUE": "forge-artifacts-events",
     "ARTIFACTS_NAMESPACE": "forge-demo"
@@ -72,7 +73,7 @@
       ]
     }
   ],
-  // Artifacts push events. Create the queue once, and one subscription per repository: see scripts/subscribe-pushes.ts.
+  // Artifacts push events. Create the queue once. Each repository needs a subscription from the forge or from scripts/subscribe-pushes.ts.
   "queues": { "consumers": [{ "queue": "forge-artifacts-events", "max_batch_size": 10, "max_batch_timeout": 1 }] },
   "observability": { "enabled": true }
 }

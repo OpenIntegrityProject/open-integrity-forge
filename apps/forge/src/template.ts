@@ -1,10 +1,10 @@
-// The sample project the agents work on: a small notes repository. Its
-// inception commit holds these files and the signer policy.
+// The sample project that the agents work on: a small repository of notes.
+// The first policy commit, after the empty inception commit, holds these files.
 
 import { ALLOWED_SIGNERS_PATH, allowedSigners, POLICY_PATH, renderPolicy, type Policy } from "../authority/policy.ts";
 import type { Verifier } from "./verifier.ts";
 
-export const REPO_README = `# How to verify this repository
+const REPO_README = `# How to verify this repository
 
 This repository carries its own rules. \`.repo/config/verification/policy.json\`
 lists the keys it trusts:
@@ -18,7 +18,8 @@ lists the keys it trusts:
   An author key cannot approve, and cannot change \`.repo/\`.
 
 The first commit of \`main\` is the root of trust. Its id is the id of this
-repository. Each later commit is checked against the policy of its first
+repository, and its decentralized identifier is \`did:repo:\` followed by that
+id: the same on every host and in every clone. Each later commit is checked against the policy of its first
 parent, so a commit cannot change the rules it obeys, and a key can never
 authorize itself.
 
@@ -34,13 +35,13 @@ window an hour late):
     TZ=UTC git -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
 `;
 
-export const WORKFLOW_PATH = ".github/workflows/verify.yml";
+const WORKFLOW_PATH = ".github/workflows/verify.yml";
 
 /**
  * The GitHub workflow that checks a mirror of the repository. It fetches the
  * verifier this forge serves and checks its digest before it runs it.
  */
-export function workflow(verifier: Verifier): string {
+function workflow(verifier: Verifier): string {
   return `# Made by the forge with the first commit, so the promoter approved it.
 # It checks each commit of main against .repo/config/verification/policy.json
 # with the forge verifier, pinned by its SHA-256 digest.
@@ -79,10 +80,10 @@ jobs:
 }
 
 /**
- * The repository is also a tiny Worker that serves its notes. Connect it to
+ * The repository is also a small Worker that serves its notes. Connect it to
  * Workers Builds in the dashboard (Settings > Builds > Connect, with this
- * Artifacts repository), and each promotion to main deploys it: only a
- * person's passkey approval ships.
+ * Artifacts repository). Then each promotion to main deploys it. Thus Workers
+ * Builds deploys only changes that a person approved with a passkey.
  */
 function workerFiles(repoName: string): Record<string, string> {
   return {

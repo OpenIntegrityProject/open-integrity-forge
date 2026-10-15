@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-// Check push events end to end on a deployed forge with Artifacts: a person
-// outside the forge pushes to an agent's fork with plain git, Artifacts sends
-// the `pushed` event to the forge's queue, and the forge verifies the push as
-// a new proposal. The commit is not signed, so the forge must reject it (R3).
+// Check push events end to end on a deployed forge with Artifacts. A person
+// outside the forge pushes to the fork of an agent with plain git. Artifacts
+// sends the `pushed` event to the queue of the forge, and the forge verifies
+// the push as a new proposal. The commit has no signature, so the forge must
+// reject it (R3).
 //
 //   node scripts/push-check.ts https://<host> [--namespace forge-demo] [--queue forge-artifacts-events] [--keep]
 //
-// It needs wrangler logged in to the forge's account. If the forge does not
-// subscribe its repositories itself (no CF_API_TOKEN secret), the script
-// subscribes the fork. At the end it removes what it made, unless --keep.
+// It needs a `wrangler login` session for the account of the forge. If the
+// forge does not subscribe its repositories itself (no CF_API_TOKEN secret),
+// the script subscribes the fork. At the end, it deletes its subscription. It
+// also deletes the project, unless you give --keep.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -59,7 +61,7 @@ try {
     step(`subscribed the queue to ${bo.fork}`);
   } else step(`the forge already subscribed ${bo.fork}`);
 
-  // A token for the fork, as a person who works on it from a laptop would get one.
+  // A token for the fork, as a person who works on the fork from a laptop gets it.
   const token = JSON.parse(wrangler(["artifacts", "repos", "issue-token", bo.fork, "--namespace", values.namespace!, "--scope", "write", "--ttl", "600", "--json"]));
   const secret: string = token.plaintext ?? token.token ?? token.result?.plaintext;
   const remote = state.repo.remote!.replace(`/${state.repo.name}.git`, `/${bo.fork}.git`);

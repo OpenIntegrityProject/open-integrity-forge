@@ -9,7 +9,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "forgedemo.gordianstack.com", "custom_domain": true }],
   "workers_dev": false,
-  // Bundles the verifier, the page script, the stylesheet and the fonts into public/ before dev and deploy.
+  // `npm run build` bundles the verifier, the page script, the stylesheet and the fonts into public/ before dev and deploy.
   "build": { "command": "npm run build", "watch_dir": ["browser", "authority", "scripts"] },
   "assets": {
     "directory": "public",
@@ -23,7 +23,7 @@
     "RP_NAME": "Open Integrity Forge Demo",
     "ORIGIN": "https://forgedemo.gordianstack.com",
     "REFUSAL_FLOOR_MS": "800",
-    // "artifacts" keeps repos in Cloudflare Artifacts; "local" keeps them in the LocalRepo Durable Object.
+    // With "artifacts", the repositories are in Cloudflare Artifacts. With "local", they are in the LocalRepo Durable Object.
     "REPO_HOST": "artifacts",
     "AGENT_KEY_TTL_S": "3600",
     "FORK_TOKEN_TTL_S": "900",
@@ -32,7 +32,7 @@
     "MIRROR_OWNER": "",
     "MIRROR_GIT_BASE": "https://github.com",
     "MIRROR_API": "https://api.github.com",
-    // Push subscriptions: the forge makes one per repository when the CF_API_TOKEN secret is set.
+    // Push subscriptions: with the CF_API_TOKEN secret and REPO_HOST "artifacts", the forge makes one for each repository.
     "CF_ACCOUNT_ID": "cb3207d4e31a99ec82c9670b3b70dde0",
     "PUSH_QUEUE": "forge-artifacts-events",
     "ARTIFACTS_NAMESPACE": "forge-demo"
@@ -75,7 +75,7 @@
       ]
     }
   ],
-  // Artifacts push events. Create the queue once, and one subscription per repository: see scripts/subscribe-pushes.ts.
+  // Artifacts push events. Create the queue once. Each repository needs a subscription from the forge or from scripts/subscribe-pushes.ts.
   "queues": { "consumers": [{ "queue": "forge-artifacts-events", "max_batch_size": 10, "max_batch_timeout": 1 }] },
   "observability": { "enabled": true }
 }

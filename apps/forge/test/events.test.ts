@@ -23,7 +23,7 @@ const pushed = (repoName: string, ref: string, after: string): PushedEvent => ({
   payload: { ref, before: "0".repeat(40), after },
 });
 
-/** Clone a repository with a write token, as someone outside the forge with that token would. */
+/** Clone a repository with a write token, as a person outside the forge can do with that token. */
 async function cloneWithToken(name: string) {
   const host = repoHost(env as Env);
   const token = await host.token(name, "write", 120);

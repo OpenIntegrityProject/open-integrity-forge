@@ -1,12 +1,13 @@
-// Fail if test-only code reaches the deployed forge: the library's software
-// authenticator, which signs whatever it is asked to, or the test harness.
-// Bundles the Worker as `wrangler deploy` does, with wrangler.jsonc, and
-// searches the bundle for names that only that code holds.
+// Fail if test-only code gets into the deployed forge. That code is the
+// software authenticator of the library, which signs all data that it gets,
+// the test harness, and the test Git server. The script bundles the Worker as
+// `wrangler deploy` does, with wrangler.jsonc. Then it searches the bundle for
+// names that only that code holds.
 //
 //   node scripts/check-production-bundle.ts
 //
-// Run it from apps/forge; `npm test` does. The bundle must still hold names the
-// production code uses, or the search proves nothing.
+// Run it from apps/forge. `npm test` runs it. The bundle must also hold names
+// that the production code uses. If not, the search proves nothing.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";

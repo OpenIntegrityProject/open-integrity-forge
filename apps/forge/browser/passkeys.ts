@@ -1,8 +1,8 @@
-// The browser's passkeys for the forge page. It works as the demo page's own
-// passkeys do (one WebAuthn request at a time, each one run by lendPage), and
-// it also keeps the registration response of each passkey it makes. The forge
-// reads the promoter key from that response, since only a registration
-// carries the public key.
+// The browser's passkeys for the forge page. They work as the passkeys of the
+// demo page do. Only one WebAuthn request runs at a time, and `run` (the
+// forge's `lend`) runs each request except autofill. They also keep the registration response
+// of each passkey that they make. The forge reads the promoter key from that
+// response, because only a registration contains the public key.
 
 import {
   autofillPasskey,
@@ -43,13 +43,13 @@ export class ForgePasskeys implements Authenticator {
     return this.run(() => (mode === "find" ? findPasskey(options) : usePasskey(options)));
   }
 
-  /** Request an approval: an ordinary passkey sheet over options that the forge made for one change. */
+  /** Request an approval: an ordinary passkey request, with options that the forge made for one change. */
   approve(options: PublicKeyCredentialRequestOptionsJSON) {
     this.autofillRequests.stop();
     return this.run(() => usePasskey(options));
   }
 
-  /** The registration response of the last passkey made here, once. */
+  /** Return the registration response of the last passkey made here. A second call returns null. */
   takeCreated(): RegistrationResponseJSON | null {
     const created = this.created;
     this.created = null;

@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 
 // Which project, and which agent, each repository belongs to. A push event
-// names only the repository, so the event handler looks it up here.
+// names only the repository, so the event handler finds the repository here.
 
-export interface RepoEntry {
+interface RepoEntry {
   projectId: string;
   /** The agent whose fork this is, or null for the project repository. */
   agentId: string | null;
@@ -34,7 +34,7 @@ export class RepoIndex extends DurableObject {
   }
 }
 
-/** The one repo index. */
+/** The one `RepoIndex` for all projects. */
 export function repoIndex(env: Env) {
   return env.REPO_INDEX.get(env.REPO_INDEX.idFromName("global"));
 }

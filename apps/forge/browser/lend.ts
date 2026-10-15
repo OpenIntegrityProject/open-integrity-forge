@@ -1,7 +1,8 @@
-// The demo's lendPage, for every pane on the forge page: while a passkey
-// request runs, the open panes are not modal, so a password manager that
-// draws its picker in the page can take clicks. Afterwards they are modal
-// again, and the focus returns where it was.
+// The demo's lendPage, for the panes and for the approval and commit sheets of
+// the forge page. While a passkey request runs, the open panes and sheets are
+// not modal. Thus a password manager that shows its picker in the page can get
+// clicks. After the request, they are modal again, and the focus returns to
+// where it was.
 
 const PANES = ["codes", "settings", "sign-in", "approval", "commit"];
 

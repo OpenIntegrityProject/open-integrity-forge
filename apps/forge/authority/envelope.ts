@@ -1,13 +1,14 @@
-// An approval as a Gordian Envelope (BCR-2024-003): the subject is the exact
-// payload text, with 'isA': "ForgeApproval" and one assertion for each part of
-// the WebAuthn assertion. Its digest commits to all of it. The elided form
-// keeps the payload and the credential id and replaces the WebAuthn parts with
-// their digests, so it has the same root digest and can be shared as proof of
-// what was approved without the authenticator data. The repository still
-// stores the approval as a commit trailer; this is a view of the same facts.
+// An approval as a Gordian Envelope (BCR-2024-003). The subject is the exact
+// payload text. The envelope has 'isA': "ForgeApproval" and one assertion for
+// each part of the WebAuthn assertion. Its digest commits to all of it. The
+// elided form keeps the payload and the credential id. It replaces the
+// WebAuthn parts with their digests, so its root digest is the same. You can
+// share it as proof of the approval without the authenticator data. The
+// repository still keeps the approval as a commit trailer. The envelope is a
+// different view of the same facts.
 //
-// It uses the library's hand-written encoders. Its tests compare the bytes
-// with vectors made by the reference bc-envelope-cli (ADR 0005).
+// It uses the hand-written encoders of the library. Its tests compare the
+// bytes with vectors from the reference bc-envelope-cli (ADR 0005).
 
 import {
   assertion,
@@ -24,10 +25,10 @@ import {
 import type { Approval } from "./approval.ts";
 import { fromBase64Url, fromUtf8, toHex } from "./bytes.ts";
 
-/** The parts of the WebAuthn assertion that the elided form leaves out. */
+/** The parts of the WebAuthn assertion that the elided form replaces with their digests. */
 const ELIDED = new Set(["authenticatorData", "clientDataJSON", "signature"]);
 
-export interface ApprovalEnvelope {
+interface ApprovalEnvelope {
   /** `ur:envelope/…`: the untagged Envelope in minimal Bytewords. */
   ur: string;
   /** The tagged Envelope, hex. */
@@ -39,7 +40,7 @@ export interface ApprovalEnvelope {
 async function build(approval: Approval, elide: boolean): Promise<Envelope> {
   const field = async (name: string, bytes: Uint8Array) => {
     const a = await assertion(await leaf(encodeText(name)), await leaf(encodeBytes(bytes)));
-    // An elided element is its digest as a byte string; its digest stays the same.
+    // An elided element is its digest as a byte string. Its digest does not change.
     return elide && ELIDED.has(name) ? { untagged: encodeBytes(a.digest), digest: a.digest } : a;
   };
   const subject = await leaf(encodeText(fromUtf8(fromBase64Url(approval.payload))));

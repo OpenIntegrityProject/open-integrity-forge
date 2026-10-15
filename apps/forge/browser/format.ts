@@ -1,6 +1,12 @@
-// How the stage writes hashes, keys, times and counts.
+// How the stage, the history band and the sheets write hashes, keys, times and counts.
 
 export const short = (oid: string | null | undefined) => (oid ? oid.slice(0, 7) : "");
+
+/** The decentralized identifier of a repository: `did:repo:` and the id of its inception commit. */
+export const didRepo = (repoId: string) => `did:repo:${repoId}`;
+
+/** A `did:repo` address with the short form of the id, for a line of text. */
+export const shortDidRepo = (repoId: string) => `did:repo:${short(repoId)}…`;
 
 /** `SHA256:` and the first 10 characters of the digest. */
 export const shortFingerprint = (fp: string) => (fp.startsWith("SHA256:") ? `${fp.slice(0, 17)}…` : fp);
@@ -9,7 +15,7 @@ export function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 }
 
-/** Time left as m:ss, or h:mm:ss over an hour. */
+/** The time left as m:ss, or as h:mm:ss for an hour or more. */
 export function remaining(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);
@@ -20,6 +26,10 @@ export function remaining(ms: number): string {
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** The lane colour class of an agent: the demo's two agents have their own, any other shares a third. */
+/**
+ * The lane colour class of an agent. The two agents of the demo have their own
+ * colours, and all other agents share a third. Without an agent id, the result
+ * is the class of main.
+ */
 export const laneClass = (agentId: string | null | undefined) =>
   agentId === "ada" ? "lane-ada" : agentId === "bo" ? "lane-bo" : agentId ? "lane-other" : "lane-main";

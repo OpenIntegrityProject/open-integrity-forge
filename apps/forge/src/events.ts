@@ -1,12 +1,12 @@
 import { repoIndex } from "./repo-index.ts";
 
-// Artifacts push events, from a queue. A push that the forge did not make,
-// such as a person who pushes to a fork from a laptop, still gets verified:
-// a push to a fork branch becomes or updates a proposal, and a push to main
-// of the project repository is checked against the policy at once.
+// Artifacts push events, from a queue. The forge also verifies a push that it
+// did not make, for example a push to a fork from the laptop of a person. A
+// push to a fork branch makes or updates a proposal. The forge verifies a push
+// to main of the project repository immediately.
 //
-// Each repository needs its own subscription for `pushed` events; see
-// scripts/subscribe-pushes.ts.
+// Each repository needs its own subscription for `pushed` events. See
+// subscriptions.ts and scripts/subscribe-pushes.ts.
 
 export interface PushedEvent {
   type: "cf.artifacts.repo.pushed";
@@ -24,7 +24,7 @@ function isPushed(body: unknown): body is PushedEvent {
   );
 }
 
-/** Handle one push event. Returns what it did, for the logs and the tests. */
+/** Process one push event. Returns what it did, for the logs and the tests. */
 export async function onPushed(env: Env, event: PushedEvent): Promise<string> {
   const entry = await repoIndex(env).get(event.source.repoName);
   if (!entry) return "ignored: not a forge repository";

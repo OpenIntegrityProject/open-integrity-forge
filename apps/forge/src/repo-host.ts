@@ -1,7 +1,7 @@
 // Where the forge keeps repositories: Cloudflare Artifacts, or the LocalRepo
 // Durable Object for local development and tests. The platform code sees only
-// this interface. Both hosts give repo-scoped tokens with a scope and an
-// expiry, so an agent gets a token for its own fork and for nothing else.
+// this interface. Both hosts give tokens for one repository, with a scope and
+// an expiry. Thus an agent gets a token for its own fork and for nothing else.
 
 import http from "isomorphic-git/http/web";
 import { cloneHttp, fetchHttp, pushHttp, reachableObjects, resolve, setRef, type Repo } from "../authority/git.ts";
@@ -36,14 +36,14 @@ export interface RepoHost {
   fork(source: string, name: string): Promise<void>;
   remove(name: string): Promise<void>;
   token(name: string, scope: "read" | "write", ttlSeconds: number): Promise<RepoToken>;
-  /** Stop a token working before it expires. */
+  /** Make a token invalid before it expires. */
   revokeToken(name: string, secret: string): Promise<void>;
   /** The URL a Git client clones from. */
   remote(name: string): Promise<string>;
   transport(name: string, token: RepoToken): Promise<Transport>;
 }
 
-/** The repo host that `REPO_HOST` names. */
+/** The repository host that `REPO_HOST` names. */
 export function repoHost(env: Env): RepoHost {
   if (env.REPO_HOST === "local") return new LocalHost(env.LOCAL_REPOS, env.ORIGIN);
   if (!("ARTIFACTS" in env)) throw new Error("REPO_HOST is artifacts, but there is no ARTIFACTS binding");
@@ -60,7 +60,7 @@ class ArtifactsHost implements RepoHost {
 
   constructor(private readonly artifacts: Artifacts) {}
 
-  /** Run `fn` with a repo handle, and wait while a new repo or fork is not yet ready. */
+  /** Run `fn` with an RPC stub of the repository. Wait while a new repository or fork is not yet ready. */
   private async withRepo<T>(name: string, fn: (repo: ArtifactsRepo) => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       let repo: ArtifactsRepo;
@@ -77,7 +77,7 @@ class ArtifactsHost implements RepoHost {
       try {
         return await fn(repo);
       } finally {
-        // The handle is an RPC stub: release it. Symbol.dispose is not in the ES2024 types.
+        // Release the RPC stub. Symbol.dispose is not in the ES2024 types.
         const dispose = (Symbol as { dispose?: symbol }).dispose;
         if (dispose) (repo as unknown as Record<symbol, (() => void) | undefined>)[dispose]?.();
       }

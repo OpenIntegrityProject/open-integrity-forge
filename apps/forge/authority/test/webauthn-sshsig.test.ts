@@ -10,7 +10,7 @@ import { RP_ID, testPromoter } from "./promoter.ts";
 const message = "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\nauthor A <a@x> 1 +0000\ncommitter A <a@x> 1 +0000\n\nhello\n";
 const fixture = (name: string) => readFileSync(join(import.meta.dirname, "fixtures", "chrome-passkey", name));
 
-/** A passkey signature over `text`, made by a software authenticator as a browser would. */
+/** Make a passkey signature over `text` with a software authenticator, as a browser does. */
 async function passkeySigned(text: string, tamper = {}) {
   const leo = await testPromoter();
   const blob = skPublicKeyBlob(leo.entry.publicKey, RP_ID);

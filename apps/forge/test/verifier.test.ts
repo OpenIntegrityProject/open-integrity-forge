@@ -13,7 +13,7 @@ describe("the verifier file", () => {
     const leo = new Person(app);
     await leo.register(uniqueName("Leo"));
     const state = must(await createProject(leo, "pinned"));
-    // The commit after the empty inception commit holds the template, the workflow among it.
+    // The commit after the empty inception commit holds the template, and the template includes the workflow.
     const first = must(await leo.forge.commit(state.id, state.mainHead!));
     const workflow = first.changes.find((c) => c.path === ".github/workflows/verify.yml")!;
     const text = workflow.lines!.map((l) => l.text).join("\n");

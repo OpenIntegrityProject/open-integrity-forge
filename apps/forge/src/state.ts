@@ -34,7 +34,7 @@ export interface ApprovalRequest {
   payload: ApprovalPayload;
   /** The commit message, for a change of main: the passkey signs the whole commit, this message included. */
   message?: string;
-  /** The request options for `usePasskey`. The challenge is the SSHSIG data of the commit for a change of main, else the SHA-256 digest of the payload bytes. */
+  /** The request options for `usePasskey`. For a commit that the passkey signs, the challenge is the SSHSIG data of that commit. For a release, it is the SHA-256 digest of the payload bytes. */
   options: {
     challenge: string;
     rpId: string;
@@ -132,7 +132,7 @@ export interface ProjectState {
   name: string;
   createdAt: number;
   repo: { name: string; host: "artifacts" | "local"; remote: string | null };
-  /** The inception commit, once there is one. */
+  /** The id of the inception commit, when there is one. */
   repoId: string | null;
   mainHead: string | null;
   promoter: PromoterKey;
@@ -189,7 +189,7 @@ export interface CommitDetail {
   message: string;
   /** The armored SSH signature, or null. */
   signature: string | null;
-  /** The approval in the trailer, decoded, or null. */
+  /** The approval, decoded, or null. For a commit that the passkey signs, it is the trailer payload with the assertion from the signature. */
   approval: {
     payload: ApprovalPayload;
     credentialId: string;

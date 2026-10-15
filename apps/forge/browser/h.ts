@@ -1,7 +1,7 @@
-// A small element builder, so the stage code reads as the markup it makes.
-// It sets text with textContent only, never innerHTML.
+// A small element builder. With it, the stage code looks like the markup that
+// it makes. It adds text only as text nodes, never through innerHTML.
 
-export type Child = Node | string | number | null | undefined | false | Child[];
+type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, unknown>;
 
 function apply(element: Element, attrs: Attrs = {}): void {
@@ -25,7 +25,7 @@ function append(element: Element, children: Child[]): void {
   }
 }
 
-/** Replace the children of `element`. Empty children are left out, as `h` does. */
+/** Replace the children of `element`. Like `h`, it ignores empty children. */
 export function fill(element: Element, ...children: Child[]): void {
   element.replaceChildren();
   append(element, children);

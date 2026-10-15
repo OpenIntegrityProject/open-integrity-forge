@@ -11,24 +11,33 @@
   <body>
     <a class="skip" href="#main">Skip to the content</a>
     <header class="app-bar">
-      <a class="wordmark" href="/" aria-label="Open Integrity Forge Demo, home">Open Integrity Forge Demo</a>
-      <div id="project-switch" class="project-switch" hidden>
-        <label for="project-select" class="visually-hidden">Project</label>
-        <select id="project-select"></select>
+      <div class="app-bar-start">
+        <a class="wordmark" href="/" aria-label="Open Integrity Forge Demo, home">Open Integrity Forge Demo</a>
+        <div id="project-switch" class="project-switch" hidden>
+          <label for="project-select" class="visually-hidden">Project</label>
+          <select id="project-select"></select>
+        </div>
       </div>
       <span id="signed-in" hidden>
         <button id="play-story" class="story-button" type="button" hidden>Play the story</button>
-        <button id="promoter-badge" class="promoter-badge" type="button" data-passkey="on" aria-describedby="promoter-badge-text">
+        <button id="account-button" class="account-button" type="button" popovertarget="account-menu" aria-describedby="promoter-key-line">
           <span id="promoter-badge-seal" aria-hidden="true"></span>
-          <span id="promoter-badge-text"></span>
+          <strong id="member-name"></strong>
+          <span class="chevron" aria-hidden="true"></span>
         </button>
-        <strong id="member-name"></strong>
-        <span class="app-bar-actions">
-          <button id="open-settings" type="button">Settings</button>
-          <button id="logout" type="button">Log out</button>
-        </span>
+        <div id="account-menu" class="account-menu" popover>
+          <div class="account-key">
+            <p id="promoter-key-line" class="account-key-line"><span class="account-key-label">Promoter key</span> <strong id="promoter-key-name"></strong></p>
+            <button id="promoter-badge" class="primary copy" type="button" data-passkey="on"></button>
+          </div>
+          <button id="open-settings" class="menu-item" type="button" popovertarget="account-menu" popovertargetaction="hide">Settings</button>
+          <button id="logout" class="menu-item" type="button" popovertarget="account-menu" popovertargetaction="hide">Log out</button>
+        </div>
       </span>
-      <button id="open-sign-in" class="primary" type="button" hidden>Sign in</button>
+      <span id="signed-out-actions" class="signed-out-actions" hidden>
+        <button id="open-register" type="button" hidden>Register</button>
+        <button id="open-sign-in" class="primary" type="button" data-passkey="on" hidden>Sign in</button>
+      </span>
     </header>
 
     <main id="main">
@@ -43,11 +52,16 @@
             <li>Main moves only when your passkey approves that exact change, and the approval is stored in the commit.</li>
             <li>The rules live in the repository, so any clone can check them without this site.</li>
           </ul>
-          <button id="hero-sign-in" class="primary hero-action" type="button">Sign in with a passkey</button>
+          <div class="hero-actions">
+            <button id="hero-sign-in" class="primary hero-action" type="button" data-passkey="on">Sign in with a passkey</button>
+            <button id="hero-register" class="hero-action" type="button">Register</button>
+          </div>
         </div>
       </section>
 
       <section id="app-signed-in" hidden>
+        <aside id="story" class="story" aria-live="polite" hidden></aside>
+
         <section id="start" class="start" hidden aria-labelledby="start-title">
           <div class="start-main">
           <h1 id="start-title">Start a project</h1>
@@ -66,7 +80,7 @@
           <aside class="next" aria-labelledby="next-title">
             <h2 id="next-title">What happens next</h2>
             <ol>
-              <li><strong>Your passkey approves the first commit.</strong> Its hash becomes the repository's id, and the rules in it name your passkey as the only promoter.</li>
+              <li><strong>Your passkey signs the first commit.</strong> Its hash becomes the identifier of the repository, <code>did:repo:</code> and that hash, the same on every host. The next commit sets the rules, and they name your passkey as the only promoter.</li>
               <li><strong>You admit two agents.</strong> Each gets an SSH key for an hour and a fork of its own. Changing the rules needs your approval too.</li>
               <li><strong>The agents work at the same time.</strong> Each signs its commits and proposes them. The forge checks every proposal against the rules.</li>
               <li><strong>You promote what you accept.</strong> Your passkey approves the exact merge: both parents and the resulting tree.</li>
@@ -76,33 +90,32 @@
         </section>
 
         <section id="stage" class="stage" hidden>
-          <aside id="story" class="story" aria-live="polite" hidden></aside>
-
-          <section id="history" class="band" aria-labelledby="history-title">
+          <section id="history" class="band" tabindex="-1" aria-labelledby="history-title">
             <header class="band-head">
               <h2 id="history-title">History</h2>
-              <p id="repo-meta" class="repo-meta small"></p>
+              <p id="repo-verdict" class="repo-verdict small"></p>
             </header>
+            <p id="repo-meta" class="repo-meta small"></p>
             <div id="graph" class="graph-scroll" tabindex="-1"></div>
             <div id="release-form" class="release-form"></div>
           </section>
 
           <div class="regions">
-            <section id="rules" class="region" aria-labelledby="rules-title">
+            <section id="rules" class="region" tabindex="-1" aria-labelledby="rules-title">
               <h2 id="rules-title">Rules in the repository</h2>
               <div id="rules-body"></div>
             </section>
-            <section id="agents" class="region" aria-labelledby="agents-title">
+            <section id="agents" class="region" tabindex="-1" aria-labelledby="agents-title">
               <h2 id="agents-title">Agents</h2>
               <div id="agents-body"></div>
             </section>
-            <section id="proposals" class="region" aria-labelledby="proposals-title">
+            <section id="proposals" class="region" tabindex="-1" aria-labelledby="proposals-title">
               <h2 id="proposals-title">Proposals</h2>
               <div id="proposals-body"></div>
             </section>
           </div>
 
-          <section id="outside" class="outside" aria-labelledby="outside-title">
+          <section id="outside" class="outside" tabindex="-1" aria-labelledby="outside-title">
             <h2 id="outside-title">Check it outside the forge</h2>
             <p class="muted">The verifier reads only the repository. It gives the same answer here, on a fresh clone, on GitHub, or on your laptop.</p>
             <div id="outside-body"></div>
@@ -113,31 +126,37 @@
       </section>
     </main>
 
+    <!-- This element tells a screen reader "Copied." when a Copy button copies text. See browser/copy.ts. -->
+    <p id="copy-live" class="visually-hidden" aria-live="polite"></p>
+
     <footer class="site-foot small">
-      <p>A demo of <a href="https://github.com/OpenIntegrityProject">Open Integrity</a> from the Open Integrity Project and <a href="https://www.blockchaincommons.com/">Blockchain Commons</a>. Demo by Leonardo Custodio and Christopher Allen; Christopher Allen is the architect of Open Integrity and wrote <a href="https://github.com/BlockchainCommons/passkey-cloudflare">passkey-cloudflare</a>. <a href="https://github.com/OpenIntegrityProject/open-integrity-forge">Source</a></p>
+      <p>A demo of <a target="_blank" rel="noopener" href="https://github.com/OpenIntegrityProject">Open Integrity</a> from the Open Integrity Project and <a target="_blank" rel="noopener" href="https://www.blockchaincommons.com/">Blockchain Commons</a>. Demo by Leonardo Custodio and Christopher Allen; Christopher Allen is the architect of Open Integrity and wrote <a target="_blank" rel="noopener" href="https://github.com/BlockchainCommons/passkey-cloudflare">passkey-cloudflare</a>. <a target="_blank" rel="noopener" href="https://github.com/OpenIntegrityProject/open-integrity-forge">Source</a></p>
     </footer>
 
     <dialog id="approval" class="sheet" aria-labelledby="approval-title">
       <div id="approval-body"></div>
     </dialog>
 
+    <!-- The ask sheet: a question before an action, in place of the browser's confirm(). See browser/ask.ts. -->
+    <dialog id="ask" class="sheet sheet-ask" aria-labelledby="ask-title"></dialog>
+
     <dialog id="commit" class="sheet sheet-wide" aria-labelledby="commit-title">
       <div class="pane-header"><span></span><button id="commit-close" class="close" type="button" aria-label="Close">&times;</button></div>
       <div id="commit-body"></div>
     </dialog>
 
-    <dialog id="sign-in" aria-labelledby="sign-in-title">
+    <!-- Sign in asks for a passkey at once. This pane opens for Register, or when that passkey request does not sign in. -->
+    <dialog id="sign-in" data-mode="sign-in" aria-labelledby="sign-in-title">
       <div class="pane-header">
       <h2 id="sign-in-title">Sign in</h2>
       <button class="close" type="button" aria-label="Close">&times;</button>
       </div>
       <p id="sign-in-status" role="status" aria-live="polite"></p>
-      <section id="entry" hidden>
-        <button class="primary" id="continue" type="button" autofocus>Continue with passkey</button>
-        <div id="choices" hidden>
-          <p id="choices-reason"></p>
+      <section id="entry">
+        <p id="choices-reason"></p>
+        <button class="primary" id="continue" type="button" data-passkey="on">Continue with passkey</button>
+        <div id="choices">
           <form id="register-form">
-            <h3>New here? Register</h3>
             <label>
               Member name
               <input id="register-name" name="memberName" autocomplete="username" required />
@@ -161,6 +180,8 @@
             <button class="primary" type="submit">Recover with a new passkey</button>
           </form>
         </div>
+        <p class="switch switch-to-register">New here? <button id="switch-to-register" class="link" type="button">Register</button></p>
+        <p class="switch switch-to-sign-in">Already have a passkey? <button id="switch-to-sign-in" class="link" type="button" data-passkey="on">Sign in</button></p>
       </section>
 
       <section id="rebind" hidden>
@@ -174,15 +195,21 @@
       <h2 id="codes-title">Your recovery codes</h2>
       <p id="codes-status" role="status" aria-live="polite"></p>
       <p>Store these somewhere safe. Each works once, and they will not be shown again.</p>
-      <p id="codes-header"></p>
-      <ol id="code-list"></ol>
-      <button id="codes-copy" type="button">Copy</button>
-      <button id="codes-toggle" type="button">Show as words</button>
+      <div class="codes-slip">
+        <p id="codes-header"></p>
+        <ol id="code-list"></ol>
+      </div>
+      <div class="button-row">
+        <button id="codes-copy" class="copy" type="button">Copy</button>
+        <button id="codes-toggle" type="button">Show as words</button>
+      </div>
       <label>
         <input id="codes-saved" type="checkbox" />
         I have saved my recovery codes
       </label>
-      <button class="primary" id="codes-done" type="button" disabled>Continue</button>
+      <div class="sheet-actions">
+        <button class="primary" id="codes-done" type="button" disabled>Continue</button>
+      </div>
     </dialog>
 
     <dialog id="settings" aria-labelledby="settings-title">
@@ -229,7 +256,7 @@
         <summary>Account details</summary>
         <p>
           Record id: <code id="record-id"></code>
-          <button id="copy-record-id" type="button" aria-label="Copy record id">Copy</button>
+          <button id="copy-record-id" class="copy" type="button" aria-label="Copy record id">Copy</button>
           <button id="record-id-info-toggle" class="info-toggle" type="button" aria-label="About the record id" aria-expanded="false" aria-controls="record-id-info">&#9432;</button>
         </p>
         <p id="record-id-info" hidden>Your record id names your identity record and never changes, even if every passkey and code does. It isn't secret. To make yourself an operator on your own deployment, add it to the OPERATOR_RECORD_IDS secret.</p>
@@ -243,7 +270,7 @@
         </div>
       </details>
 
-      <!-- The forge has no operator tools; the settings pane still reads this element. -->
+      <!-- The forge has no operator tools. The settings pane still reads this element. -->
       <section id="operator" hidden></section>
     </dialog>
   </body>

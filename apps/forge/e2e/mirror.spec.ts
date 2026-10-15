@@ -1,8 +1,10 @@
-// The GitHub mirror, with a local `git http-backend` in GitHub's place. After
-// a promotion, the forge force-pushes main to the mirror. Then this test runs
-// what the mirror's workflow runs: it fetches the verifier, checks the digest
-// the repository pins, and runs it in an empty folder. A commit pushed to the
-// mirror by hand fails the check; a second mirror push restores main.
+// The GitHub mirror, with a local `git http-backend` in the place of GitHub.
+// After a promotion, the person asks for a mirror push, and the forge
+// force-pushes main to the mirror. Then this test does the steps of the
+// workflow of the mirror. It fetches the verifier, checks the digest that the
+// repository pins, and runs the verifier in an empty folder. A commit that a
+// person pushes to the mirror by hand fails the check. A second mirror push
+// restores main.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -59,8 +61,7 @@ function cloneOf(bare: string): string {
 test("a promoted history mirrors to GitHub, where the pinned verifier passes it and catches a commit pushed by hand", async ({ page }) => {
   await addAuthenticator(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-  await page.getByRole("button", { name: "Continue with passkey" }).click();
+  await page.locator("#hero-register").click();
   await page.locator("#register-name").fill(`Leo${Date.now().toString(36)}`);
   await page.getByRole("button", { name: "Register with a passkey" }).click();
   await page.getByRole("checkbox", { name: "I have saved my recovery codes" }).check();

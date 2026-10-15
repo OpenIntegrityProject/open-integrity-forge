@@ -7,11 +7,11 @@ import type { AgentState, TaskEvent, TaskState } from "./state.ts";
 import { noteMessage, taskById } from "./tasks.ts";
 import { noteClient, writeNote } from "./llm.ts";
 
-// One agent of one project. It holds the agent's Ed25519 key, which never
-// leaves this object, and a write token for the agent's own fork, which the
-// project gives it. It runs its tasks one at a time from an alarm: clone the
-// fork, edit, sign, commit, push, propose. Each step is an event that the
-// page shows as it happens.
+// One agent of one project. It keeps the agent's Ed25519 key, which never
+// leaves this object. It also keeps a write token for the agent's own fork,
+// which the project gives it. It runs its tasks one at a time from an alarm:
+// clone the fork, edit, sign, commit, push, propose. Each step is an event that
+// the page shows when it occurs.
 
 export interface AgentIdentity {
   projectId: string;
@@ -22,7 +22,7 @@ export interface AgentIdentity {
   validBefore: string;
 }
 
-export interface AgentKey {
+interface AgentKey {
   publicKey: string;
   fingerprint: string;
 }
@@ -87,10 +87,9 @@ export class AgentRun extends DurableObject<Env> {
     return { publicKey, fingerprint: fp };
   }
 
-  /** Queue a task on the agent's fork with a write token for that fork, and start it. */
   private migrate = false;
 
-  /** Add the args column to a tasks table made before it existed. */
+  /** Add the args column to a tasks table that the agent made before the column existed. */
   private columns(): void {
     if (!this.migrate) return;
     this.migrate = false;
@@ -98,6 +97,7 @@ export class AgentRun extends DurableObject<Env> {
     if (!names.includes("args")) this.sql.exec("ALTER TABLE tasks ADD COLUMN args TEXT");
   }
 
+  /** Add a task for the agent's fork to the queue, keep the write token for that fork, and start the alarm. */
   async assign(fork: string, token: RepoToken, taskId: string, args: { topic?: string } = {}): Promise<void> {
     this.columns();
     const row = this.row();
@@ -105,7 +105,7 @@ export class AgentRun extends DurableObject<Env> {
     const identity = JSON.parse(row.identity) as AgentIdentity;
     const task = taskById(identity.agentId, taskId);
     this.sql.exec("UPDATE agent SET fork = ?, token = ?", fork, JSON.stringify(token));
-    // The same task again goes to a new branch: an existing branch is never pushed over.
+    // A repeated task goes to a new branch, so that a push never overwrites a branch that exists.
     const before = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE task_id = ?", task.id).one().n;
     this.sql.exec(
       "INSERT INTO tasks (task_id, title, branch, rogue, status, args) VALUES (?, ?, ?, ?, 'queued', ?)",
@@ -119,8 +119,9 @@ export class AgentRun extends DurableObject<Env> {
   }
 
   /**
-   * The key was revoked: stop each task that has not started, forget the fork
-   * token, and return it so the project can revoke it at the repo host.
+   * A promoter revoked the key. Stop each task that has not started, and
+   * forget the fork token. Return the token secret, so that the project can
+   * revoke the token at the repository host.
    */
   revoke(): string | null {
     const row = this.row();

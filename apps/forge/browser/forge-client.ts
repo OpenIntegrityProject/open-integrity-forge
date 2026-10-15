@@ -1,6 +1,6 @@
-// The client for the forge routes. Like the demo client, it makes the
-// requests and returns outcomes; it touches no DOM. Tests use it too, with a
-// software authenticator behind the same seam.
+// The client for the forge routes. Like the demo client, it sends the
+// requests and returns outcomes. It does not touch the DOM. Tests also use it,
+// with a software authenticator in place of the passkey.
 
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from "passkey-cloudflare/browser";
 import type { DemoClient, Target } from "../../demo/browser/demo-client.ts";
@@ -17,7 +17,7 @@ export interface ForgeMe {
 export type Outcome<T> = { result: "ok"; value: T } | { result: "refused"; status: number; refusal: Refusal } | { result: "cancelled" };
 
 /** How the client asks the promoter's passkey for an approval. */
-export interface Approver {
+interface Approver {
   approve(options: PublicKeyCredentialRequestOptionsJSON): Promise<{ result: "found"; response: AuthenticationResponseJSON } | { result: "not-found" }>;
 }
 
@@ -53,7 +53,7 @@ export class ForgeClient {
     );
   }
 
-  /** POST, and step up once if the route needs it. */
+  /** Send a POST request. If the route requires a step-up, do the step-up once and send the request again. */
   private async gated<T>(path: string, body?: unknown): Promise<Outcome<T>> {
     let response = await this.request("POST", path, body);
     const refused = (await response.clone().json().catch(() => ({}))) as { error?: string };

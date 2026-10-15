@@ -7,9 +7,9 @@ import { ForgeClient, type Outcome } from "../browser/forge-client.ts";
 import { createForge } from "../src/forge.ts";
 import type { ProjectState } from "../src/state.ts";
 
-export const ORIGIN = "http://localhost:8787";
+const ORIGIN = "http://localhost:8787";
 
-/** The forge Worker as a test drives it, with its own storage prefix for the passkey records. */
+/** The forge Worker as a test uses it, with its own storage prefix for the passkey records. */
 export function testForge() {
   const storagePrefix = crypto.randomUUID();
   const clock = { offsetMs: 0 };
@@ -17,7 +17,7 @@ export function testForge() {
   return {
     origin: ORIGIN,
     storagePrefix,
-    /** Move the identity layer's clock, as for a step-up that lapses. */
+    /** Move the clock of the identity layer, for example to make a step-up expire. */
     clock,
     async fetch(request: Request): Promise<Response> {
       const ctx = createExecutionContext();
@@ -28,7 +28,7 @@ export function testForge() {
   };
 }
 
-export type TestForge = ReturnType<typeof testForge>;
+type TestForge = ReturnType<typeof testForge>;
 
 /** A person at a browser: cookies, a software authenticator, the demo client and the forge client. */
 export class Person {
@@ -36,9 +36,9 @@ export class Person {
   readonly authenticator: SoftwareAuthenticator;
   readonly demo: DemoClient;
   readonly forge: ForgeClient;
-  /** The registration response of the last passkey made, as the page keeps it. */
+  /** The registration response of the last passkey that the person made, as the page keeps it. */
   created: RegistrationResponseJSON | null = null;
-  /** How the next approval is bent, for a test that expects a refusal. */
+  /** The change that the authenticator makes to each approval, for a test that expects a refusal. */
   tamper: Tamper | undefined;
 
   constructor(app: TestForge) {
@@ -89,7 +89,7 @@ export function must<T>(outcome: Outcome<T>): T {
 let names = 0;
 export const uniqueName = (prefix: string) => `${prefix}${Date.now().toString(36)}${++names}`;
 
-/** Poll the project until `ready` holds, as the page does. */
+/** Poll the project until `ready` is true, as the page does. */
 export async function waitFor(person: Person, projectId: string, ready: (s: ProjectState) => boolean, what: string, ms = 30_000) {
   const until = Date.now() + ms;
   let last: ProjectState | undefined;
