@@ -61,7 +61,8 @@ const POLL_MS = 200;
 const STEPS: Step[] = [
   {
     caption: "Create the project. Your passkey signs the first commit, and its hash becomes the identifier of the repository: did:repo and that hash.",
-    done: (s) => Boolean(s?.repoId),
+    // Done only once the first policy is in place: the inception commit alone still needs that second approval.
+    done: (s) => Boolean(s?.repoId && s.policy),
     async run(a) {
       const created = await a.createProject();
       if (created) await a.spotlight("#history");

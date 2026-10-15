@@ -30,6 +30,17 @@ describe("the forge refuses", () => {
     expect(await eve.forge.prepareAgents(id, ["Mallory"])).toMatchObject({ result: "refused", status: 404 });
   });
 
+  it("agents for a project whose first policy is not yet approved, with a reason", async () => {
+    const app = testForge();
+    const leo = new Person(app);
+    await leo.register(uniqueName("Leo"));
+    const prepared = must(await leo.forge.prepareProject("half-made"));
+    const signed = must(await leo.forge.approve(prepared));
+    expect(signed.repoId).toBeTruthy();
+    expect(signed.policy).toBeNull();
+    expect(await leo.forge.prepareAgents(signed.id, ["Ada"])).toMatchObject({ result: "refused", status: 409, refusal: { error: "no-policy" } });
+  });
+
   it("an approval used twice", async () => {
     const { leo, id } = await project();
     const request = must(await leo.forge.prepareAgents(id, ["Ada"]));

@@ -19,7 +19,9 @@ const ACTION_TITLE = {
 } as const;
 
 function refusalText<T>(outcome: Outcome<T>): string {
-  return outcome.result === "refused" ? outcome.refusal.reason : outcome.result === "cancelled" ? "Not approved. Nothing changed." : "";
+  if (outcome.result === "cancelled") return "Not approved. Nothing changed.";
+  if (outcome.result === "refused") return outcome.refusal.reason || `The forge could not do this (HTTP ${outcome.status}). Nothing changed.`;
+  return "";
 }
 
 function fact(term: string, ...value: (Node | string)[]) {

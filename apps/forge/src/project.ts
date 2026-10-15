@@ -409,6 +409,7 @@ export class Project extends DurableObject<Env> {
   async prepareAdmission(names: string[]): Promise<Result<ApprovalRequest>> {
     const project = this.project();
     if (!project?.repoId) return refuse(409, "no-repository", "Create the project first.");
+    if (project.mainHead === project.repoId) return refuse(409, "no-policy", "Approve the first policy first.");
     if (names.length === 0 || names.length > 4 || !names.every((n) => AGENT_NAME.test(n))) {
       return refuse(400, "bad-agents", "Name one to four agents, each a short name that starts with a letter.");
     }
@@ -472,6 +473,7 @@ export class Project extends DurableObject<Env> {
   async preparePersonAdmission(publicKey: string): Promise<Result<ApprovalRequest>> {
     const project = this.project();
     if (!project?.repoId) return refuse(409, "no-repository", "Create the project first.");
+    if (project.mainHead === project.repoId) return refuse(409, "no-policy", "Approve the first policy first.");
     let raw: Uint8Array;
     try {
       raw = parsePublicKeyText(publicKey);
