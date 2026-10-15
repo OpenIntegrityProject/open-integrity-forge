@@ -1,6 +1,6 @@
-// Helpers that make what the verifier checks: approval payloads, approved
-// commits of main and signed commits of an author. The forge Worker and the
-// tests use them. The verifier does not.
+// Helpers that make what the verifier checks: approval payloads, inception
+// commits, approved commits of main, signed commits of an author and release
+// tags. The forge Worker and the tests use them. The verifier does not.
 
 import { encodePayload, MAIN_REF, trailerLine, withFacts, withTrailer, type Approval, type ApprovalAction, type ApprovalPayload } from "./approval.ts";
 import { commitTree, memoryRepo, writeFiles, writeTag, type Identity, type Repo } from "./git.ts";
@@ -62,14 +62,14 @@ export async function passkeyCommitPayload(input: PasskeyCommitInput): Promise<s
   return payload;
 }
 
-/** An empty inception commit: who made it, and its message. Its committer name is the signing key's fingerprint. */
+/** An empty inception commit: who made it, and its message. Its committer name is the fingerprint of the key that signs it. */
 export interface InceptionInput {
   author: Identity;
   committer: Identity;
   message: string;
 }
 
-/** Write an empty inception commit, signed by `sign`. It does not move a ref. */
+/** Write an empty inception commit that `sign` signs. It does not move a ref. */
 export async function commitInception(repo: Repo, input: InceptionInput, sign: (payload: string) => Promise<string>): Promise<string> {
   const tree = await writeFiles(repo, {});
   return commitTree(repo, { tree, parents: [], message: input.message, author: input.author, committer: input.committer, sign });
@@ -85,14 +85,7 @@ export async function inceptionPayload(input: InceptionInput): Promise<string> {
   return payload;
 }
 
-/** An author key: the private key, and its entry for the policy. */
-export interface AuthorKey {
-  privateKey: CryptoKey;
-  publicKey: Uint8Array;
-  entry: Author;
-}
-
-/** Write a commit signed with an author key. It does not move a ref. */
+/** Write a commit that an author key signs. It does not move a ref. */
 export function commitSigned(
   repo: Repo,
   input: { tree: string; parents: string[]; message: string; author: Identity; key: { privateKey: CryptoKey; publicKey: Uint8Array } },
@@ -106,7 +99,7 @@ export function commitSigned(
   });
 }
 
-/** A copy of the policy with these authors added, or replaced where the id is the same. */
+/** A copy of the policy with these authors added. A new author replaces an old author with the same id. */
 export function withAuthors(policy: Policy, authors: Author[]): Policy {
   const ids = new Set(authors.map((a) => a.id));
   return { ...policy, authors: [...policy.authors.filter((a) => !ids.has(a.id)), ...authors] };

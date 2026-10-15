@@ -3,28 +3,29 @@
 // server, so it gives the same answer on any clone, on any host.
 //
 // R0  The first commit of main is the root of trust, and its id is the
-//     repository id. It is an empty commit whose committer is the fingerprint
-//     of the passkey that signed it, as an SSH signature that git checks.
-//     (An older form: a commit holding the policy, whose approval verifies
-//     against the promoter key in that policy.)
+//     repository id. It is an empty commit. A passkey signs it with an SSH
+//     signature that git can check, and its committer is the fingerprint of
+//     that passkey. (An older form: a commit that holds the policy. Its
+//     approval verifies against the promoter key in that policy.)
 // R1  Each later commit of main carries an approval from a promoter in the
 //     policy of its first parent. The commit after an empty root sets the
 //     first policy, and the passkey that signed the root approves it.
 // R2  Only a commit of main with such an approval changes .repo/. A key that a
 //     commit adds has no say over that commit, so a key never authorizes itself.
 // R3  Each other commit that main reaches carries a valid SSH signature from
-//     an author or promoter key in the policy that was in force when it came in.
+//     an author key or a promoter key. That key is in the policy of the first
+//     parent of the merge that adds the commit to main.
 // R4  An approval names this repository, the ref, the parents and the tree of
-//     its own commit, so it cannot move to another change or repository.
+//     its own commit. Thus it cannot move to another change or repository.
 // R5  An author key signs only inside its validity window.
 // R6  An author key that a promoter revoked signs nothing after its revocation.
 //     Its earlier work still verifies.
 // R7  Where the policy says mergesOnly, a commit of main with one parent
 //     changes only .repo/. Work reaches main as a merge of signed commits, so
 //     no squash drops the authors' signatures.
-// R8  An annotated tag names a commit of main and carries approvals of that
-//     tag, commit and tree from as many distinct promoters as the policy of
-//     that commit asks (releaseApprovals, one when absent).
+// R8  An annotated tag names a commit of main. It carries approvals of that
+//     tag, commit and tree from distinct promoters. The policy of that commit
+//     sets how many (releaseApprovals, one when absent).
 // M   A proposal merges into main with no conflicts.
 
 import { approvalIn, approvalsIn, factsIn, MAIN_REF, verifyApproval, type ApprovalPayload } from "./approval.ts";
@@ -91,7 +92,7 @@ export interface TagReport {
 
 export interface HistoryReport {
   ok: boolean;
-  /** Each annotated tag, checked under R8. */
+  /** The R8 result for each annotated tag. */
   tags: TagReport[];
   /** The id of the inception commit, or null if main has no valid root. */
   repoId: string | null;
@@ -120,7 +121,7 @@ const short = (oid: string) => oid.slice(0, 7);
 
 type PolicyAt = { policy: Policy } | { error: string };
 
-/** Reads the policy of each commit once. */
+/** Reads the policy of each tree once, and keeps the result. */
 class Policies {
   private readonly byTree = new Map<string, Promise<PolicyAt>>();
   private readonly repo: Repo;
@@ -189,7 +190,7 @@ async function sshSigner(commit: Commit, policy: Policy): Promise<{ signer: Sign
   };
 }
 
-/** R3, R5 and R2 for a commit that is not on the first-parent chain of main. */
+/** R3, R5, R6 and R2 for a commit that is not on the first-parent chain of main. */
 async function checkWork(repo: Repo, commit: Commit, policy: Policy, role: CommitRole): Promise<CommitReport> {
   const rules: RuleResult[] = [];
   const { signer, key, reason } = await sshSigner(commit, policy);
@@ -276,10 +277,10 @@ async function firstPolicy(policies: Policies, commit: Commit, key: InceptionKey
 type MainApproval = { ok: true; promoter: WebAuthnPromoter; payload: ApprovalPayload; signed: boolean } | { ok: false; reason: string; payload?: ApprovalPayload };
 
 /**
- * A commit of main signed as a whole by a promoter's passkey: its SSH
- * signature verifies, the key is a P-256 passkey promoter of the policy, the
- * relying party and origin are the policy's, and the trailer holds the
- * payload, which the signature covers.
+ * Check a commit of main that the passkey of a promoter signs as a whole. Its
+ * SSH signature must verify, and the key must be a P-256 passkey promoter of
+ * the policy. The relying party and the origin must be those of the policy.
+ * The trailer must hold the payload, which the signature covers.
  */
 export async function passkeyApproval(commit: Commit, policy: Policy): Promise<MainApproval> {
   const facts = factsIn(commit.message);
@@ -307,7 +308,7 @@ async function mainApproval(commit: Commit, policy: Policy): Promise<MainApprova
   return check.ok ? { ...check, signed: false } : check;
 }
 
-/** R0, or R1, R4 and R2, for a commit on the first-parent chain of main. */
+/** R0, or R1, R4, R7 and R2, for a commit on the first-parent chain of main. */
 async function checkMain(
   repo: Repo,
   policies: Policies,
@@ -422,7 +423,8 @@ async function checkMain(
 
 /**
  * Verify all of main: the first-parent chain from `head` to the root, and
- * every commit that a merge on that chain brings in.
+ * every commit that a merge on that chain adds to main. Also verify each
+ * annotated tag (R8).
  */
 export async function verifyHistory(repo: Repo, head: string, options: { repoId?: string } = {}): Promise<HistoryReport> {
   const policies = new Policies(repo);
@@ -445,7 +447,7 @@ export async function verifyHistory(repo: Repo, head: string, options: { repoId?
     const commit = chain[i]!;
     const parent = chain[i - 1]!;
     const governing = await policies.at(parent);
-    // A merge brings in the commits of its other parents that main did not reach before.
+    // A merge adds to main the commits of its other parents that main did not reach before.
     for (const other of commit.parents.slice(1)) {
       const brought = (await reachable(repo, other, known)).reverse();
       for (const c of brought) {

@@ -1,13 +1,14 @@
-// The two sheets. The approval sheet shows exactly what the passkey will
-// sign, requests the passkey only after the person presses Approve, and then
-// shows the approval as the repository keeps it. The commit sheet shows one
-// commit: its message, its signature or approval, its files and what the
-// verifier said.
+// The approval sheet and the commit sheet. The approval sheet shows exactly
+// what the passkey will sign. It requests the passkey only after the person
+// presses Approve. Then it shows the approval as the repository keeps it. The
+// commit sheet shows one commit: its message, its signature or approval, its
+// files and the result of the verifier.
 
 import type { ApprovalRequest, CommitDetail, FileDiff, ProjectState, RuleResultView } from "./view-types.ts";
 import type { ForgeClient, Outcome } from "./forge-client.ts";
-import { clock, laneClass, plural, short, shortFingerprint } from "./format.ts";
-import { byId, fill, h, reducedMotion } from "./h.ts";
+import { copyButton } from "./copy.ts";
+import { clock, didRepo, laneClass, plural, short, shortFingerprint } from "./format.ts";
+import { byId, h, reducedMotion } from "./h.ts";
 import { seal } from "./seal.ts";
 
 const ACTION_TITLE = {
@@ -21,22 +22,22 @@ function refusalText<T>(outcome: Outcome<T>): string {
   return outcome.result === "refused" ? outcome.refusal.reason : outcome.result === "cancelled" ? "Not approved. Nothing changed." : "";
 }
 
-export function fact(term: string, ...value: (Node | string)[]) {
+function fact(term: string, ...value: (Node | string)[]) {
   return [h("dt", null, term), h("dd", null, ...value)];
 }
 
 export const mono = (text: string, title?: string) => h("code", { class: "hash", title: title ?? text }, text);
 
-/** The diff of one file, as added and removed lines. */
-export function fileDiff(file: FileDiff, open = false) {
+/** The diff of one file, as added and removed lines. With a `key`, the stage keeps it open when it draws again. */
+export function fileDiff(file: FileDiff, open = false, key?: string) {
   return h(
     "details",
-    { class: ["file-diff", `file-${file.change}`], open },
+    { class: ["file-diff", `file-${file.change}`], open, "data-key": key },
     h("summary", null, h("span", { class: "file-change" }, file.change), " ", h("code", null, file.path)),
     file.lines
       ? h(
           "pre",
-          // Focusable, so a keyboard can scroll a long line.
+          // It can get the focus, so that the keyboard can scroll a long line.
           { class: "diff", tabindex: 0, "aria-label": `Changes to ${file.path}` },
           file.lines.map((l) => h("span", { class: l.kind === "+" ? "add" : l.kind === "-" ? "del" : "ctx" }, `${l.kind} ${l.text}\n`)),
         )
@@ -47,7 +48,7 @@ export function fileDiff(file: FileDiff, open = false) {
 /** The approval as a Gordian Envelope: its digest, the full UR, and the elided UR to share. */
 function envelopeView(envelope: { full: { ur: string; digest: string }; elided: { ur: string; digest: string } }) {
   const copyable = (label: string, text: string) =>
-    h("div", { class: "command" }, h("pre", { class: "code", tabindex: 0, "aria-label": label }, text), h("button", { type: "button", class: "copy", onclick: () => void navigator.clipboard.writeText(text) }, "Copy"));
+    h("div", { class: "command" }, h("pre", { class: "code", tabindex: 0, "aria-label": label }, text), copyButton(text, "Copy", { "aria-label": `Copy ${label.toLowerCase()}` }));
   return h(
     "details",
     { class: "raw envelope" },
@@ -90,14 +91,14 @@ export class ApprovalSheet {
     first?.focus();
   }
 
-  /** Wait for one button of `buttons` and return its value. A closed sheet gives "close". */
+  /** Wait for a press on one of `buttons`, and return its value. When the sheet closes, return "close". */
   private choose(buttons: HTMLButtonElement[]): Promise<string> {
     return new Promise((done) => {
       const finish = (value: string) => {
         this.dialog.removeEventListener("close", onClose);
         done(value);
       };
-      // lend() closes and reopens the sheet around a passkey request; that close event arrives late and means nothing.
+      // `lend` closes the sheet and opens it again around a passkey request. That close event arrives late, so ignore it while the sheet is open.
       const onClose = () => {
         if (!this.dialog.open) finish("close");
       };
@@ -110,7 +111,7 @@ export class ApprovalSheet {
     if (this.dialog.open) this.dialog.close();
   }
 
-  /** Prepare, show and, if the person approves, sign one change. Returns the project after it, or null. */
+  /** Prepare one change and show it. If the person approves it, sign it. Return the project state after it, or null. */
   async run(prepare: () => Promise<Outcome<ApprovalRequest>>): Promise<ProjectState | null> {
     this.show("preparing", h("h2", null, "Preparing the change"), h("p", { class: "muted" }, "The forge builds the exact change, so you can see what you approve."));
     const prepared = await prepare();
@@ -132,7 +133,7 @@ export class ApprovalSheet {
       const approved = await this.forge.approve(request);
       if (approved.result === "ok") return this.signed(request, approved.value);
       if (approved.result === "refused") return this.refused(approved.refusal.reason);
-      // Declined: say so, and offer it again.
+      // The passkey declined. Tell the person, and let them try again.
       const again = h("button", { class: "primary", type: "button", value: "again", "data-autofocus": true }, "Try again");
       const close = h("button", { type: "button", value: "close" }, "Close");
       this.show("declined", h("h2", null, "Not approved"), h("p", null, "Your passkey did not approve it, so nothing changed."), h("div", { class: "sheet-actions" }, close, again));
@@ -155,12 +156,12 @@ export class ApprovalSheet {
             h("span", { class: "parent" }, mono(short(oid), oid), " ", h("span", { class: "muted" }, p.action === "promote" ? (i === 0 ? "main now" : "the proposal") : p.action === "release" ? "the commit to release" : "main now")),
           );
     return [
-      h("div", { class: "sheet-head" }, seal({ size: 52, detail: "badge", label: "" }), h("h2", null, title)),
+      h("div", { class: "sheet-head" }, seal({ size: 52, label: "" }), h("h2", null, title)),
       h("p", { class: "sheet-lead" }, request.summary),
       h(
         "dl",
         { class: "facts" },
-        fact("Repository", p.repo ? mono(short(p.repo), p.repo) : "This commit becomes the repository id"),
+        fact("Repository", p.repo ? mono(didRepo(p.repo)) : "The id of this commit becomes the did:repo address of the repository"),
         p.action === "release" ? fact("Tag", p.ref.replace("refs/tags/", "")) : fact("Branch", "main"),
         fact(p.parents.length === 1 ? "Parent" : "Parents", ...parents),
         fact("Resulting tree", root ? "Empty" : mono(short(p.tree), p.tree)),
@@ -202,7 +203,23 @@ export class ApprovalSheet {
     const done = h("button", { class: "primary", type: "button", value: "done", "data-autofocus": true }, "Done");
     this.show(
       "signed",
-      h("div", { class: "signed" }, stamp, h("div", null, h("h2", null, root ? "Signed" : "Approved"), h("p", null, "Main is now at ", mono(short(head), head), "."), h("p", { class: "muted" }, request.summary))),
+      h(
+        "div",
+        { class: "signed" },
+        stamp,
+        h("div", null, h("h2", null, root ? "Signed" : "Approved"), h("p", null, "Main is now at ", mono(short(head), head), "."), h("p", { class: "muted" }, request.summary)),
+      ),
+      // The inception commit gives the repository its identifier, the same on every host and in every clone.
+      ...(root
+        ? [
+            h(
+              "div",
+              { class: "did-born" },
+              h("p", { class: "small" }, "The repository now has its decentralized identifier. It is the same on every host and in every clone."),
+              h("div", { class: "command" }, h("pre", { class: "code", tabindex: 0, "aria-label": "The did:repo address of the repository" }, didRepo(state.repoId ?? head)), copyButton(didRepo(state.repoId ?? head))),
+            ),
+          ]
+        : []),
       raw,
       h("div", { class: "sheet-actions" }, done),
     );
@@ -239,7 +256,7 @@ export class CommitSheet {
     byId("commit-close").addEventListener("click", () => this.dialog.close());
   }
 
-  async open(projectId: string, oid: string, agentName: (id: string | null | undefined) => string | null) {
+  async open(projectId: string, oid: string, repoId: string | null, agentName: (id: string | null | undefined) => string | null) {
     this.body.replaceChildren(h("h2", { id: "commit-title" }, "Commit ", mono(short(oid), oid)), h("p", { class: "muted" }, "Reading it from the repository…"));
     if (!this.dialog.open) this.dialog.showModal();
     const got = await this.forge.commit(projectId, oid);
@@ -247,10 +264,10 @@ export class CommitSheet {
       this.body.replaceChildren(h("h2", { id: "commit-title" }, "Commit ", mono(short(oid), oid)), h("p", null, refusalText(got)));
       return;
     }
-    this.body.replaceChildren(...this.detail(got.value, agentName));
+    this.body.replaceChildren(...this.detail(got.value, repoId, agentName));
   }
 
-  private detail(c: CommitDetail, agentName: (id: string | null | undefined) => string | null): Node[] {
+  private detail(c: CommitDetail, repoId: string | null, agentName: (id: string | null | undefined) => string | null): Node[] {
     const [subject, ...rest] = c.message.trimEnd().split("\n");
     const report = c.report;
     const signer = report?.signer;
@@ -263,7 +280,7 @@ export class CommitSheet {
           h(
             "div",
             { class: "proof-row" },
-            seal({ size: 92, detail: "badge", center: short(c.approval.payload.tree), label: "Passkey approval" }),
+            seal({ size: 92, center: short(c.approval.payload.tree), label: "Passkey approval" }),
             h(
               "dl",
               { class: "facts" },
@@ -297,6 +314,8 @@ export class CommitSheet {
         "dl",
         { class: "facts" },
         fact("Commit", mono(short(c.oid), c.oid)),
+        // The inception commit's id is the identifier of the repository. Another commit with no parents, such as one pushed to a fork, is not.
+        ...(repoId !== null && c.oid === repoId ? fact("Identifier", mono(didRepo(c.oid))) : []),
         fact(c.parents.length === 1 ? "Parent" : "Parents", ...(c.parents.length ? c.parents.map((p) => mono(short(p), p)) : ["None: the root"])),
         fact("Tree", mono(short(c.tree), c.tree)),
         fact("Author", `${c.author.name}, ${clock(c.author.timestamp * 1000)}`),

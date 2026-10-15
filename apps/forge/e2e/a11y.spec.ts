@@ -1,7 +1,10 @@
-// An automated accessibility audit with axe, against WCAG 2.1 A and AA, of
-// each view: signed out, the start, the stage with agents and a rejection, the
-// approval sheet, the commit sheet, in light and dark. A screen reader
-// run-through by a person is still needed; axe finds only what code can.
+// An automated accessibility audit with axe, against WCAG 2.1 A and AA. It
+// audits each view: signed out, the start, the inception sheet, the approval
+// sheet, the stage with agents and a rejection, and the commit sheet. The page has
+// only a light scheme. Each view runs in a browser that prefers light and in
+// a browser that prefers dark, to show that the page is correct in both.
+// A person must still test the page with a screen reader. Axe finds only the
+// problems that code can find.
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
@@ -15,7 +18,7 @@ async function audit(page: Page, view: string) {
 }
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`every view passes axe in ${scheme} mode`, async ({ page }) => {
+  test(`every view passes axe when the browser prefers ${scheme}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("WebAuthn.enable");
@@ -26,14 +29,13 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await audit(page, "signed out");
 
-    await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-    await page.getByRole("button", { name: "Continue with passkey" }).click();
+    await page.locator("#hero-register").click();
     await page.locator("#register-name").fill(`Axe${Date.now().toString(36)}`);
     await page.getByRole("button", { name: "Register with a passkey" }).click();
     await page.getByRole("checkbox", { name: "I have saved my recovery codes" }).check();
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Start a project" })).toBeVisible();
-    await page.waitForTimeout(7000); // the toast has gone
+    await page.waitForTimeout(7000); // wait for the toast to close
     await audit(page, "start");
 
     await page.getByRole("button", { name: "Create with passkey" }).click();

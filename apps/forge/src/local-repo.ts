@@ -1,28 +1,29 @@
 import { DurableObject } from "cloudflare:workers";
 import { sha256, toHex } from "../authority/bytes.ts";
 
-// A Git repository kept in a Durable Object, for local development and tests,
-// where no Artifacts namespace is at hand. It keeps the parts of the Artifacts
-// contract the demo depends on: repo-scoped tokens with a scope and an expiry,
-// forks, and pushes that must name the ref they replace. It stores loose Git
-// objects as isomorphic-git writes them, so a Git client can also clone it
-// over the dumb HTTP protocol (see src/local-git-http.ts).
+// A Git repository in a Durable Object, for local development and tests,
+// where no Artifacts namespace is available. It keeps the parts of the
+// Artifacts contract that the demo uses. These are tokens for one repository
+// with a scope and an expiry, and forks. A push must name the value of each
+// ref that it replaces. It stores loose Git objects in the form that
+// isomorphic-git writes. Thus a Git client can also clone it over the dumb
+// HTTP protocol (see src/local-git-http.ts).
 
-export type Scope = "read" | "write";
+type Scope = "read" | "write";
 
 export interface RepoDump {
   refs: Record<string, string>;
   objects: [string, Uint8Array][];
 }
 
-export interface RefUpdate {
+interface RefUpdate {
   ref: string;
   /** The value the pusher expects the ref to hold now, or null for a new ref. */
   old: string | null;
   new: string;
 }
 
-export type UploadResult = { ok: true } | { ok: false; error: string };
+type UploadResult = { ok: true } | { ok: false; error: string };
 
 export class LocalRepo extends DurableObject {
   private readonly sql: SqlStorage;
@@ -48,7 +49,7 @@ export class LocalRepo extends DurableObject {
     return this.sql.exec("SELECT 1 FROM meta WHERE key = 'created'").toArray().length > 0;
   }
 
-  /** Create the repository, empty or from the dump of another one. Refuses a name already in use. */
+  /** Create the repository, empty or from the dump of another one. Returns false if the repository exists. */
   create(name: string, from?: RepoDump): boolean {
     if (this.exists()) return false;
     this.ctx.storage.transactionSync(() => {

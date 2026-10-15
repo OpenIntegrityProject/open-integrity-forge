@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Subscribe the forge's queue to `pushed` events of each forge repository.
-// Artifacts sends repository events only to a subscription for that one
-// repository, so each new project and fork needs one. Run it after the
-// agents are admitted, with wrangler logged in to the account of the forge.
+// Subscribe the queue of the forge to `pushed` events of each forge
+// repository. Artifacts sends repository events only to a subscription for
+// that one repository, so each new project and fork needs a subscription. A
+// forge with a CF_API_TOKEN secret subscribes its repositories itself. For a
+// forge without that secret, run this script after the policy admits the
+// agents, with a `wrangler login` session for the account of the forge.
 //
 //   node scripts/subscribe-pushes.ts [--dry-run] [--namespace forge-demo] [--queue forge-artifacts-events] [repo ...]
 //

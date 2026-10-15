@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.local.jsonc" },
-      // Repositories live in LocalRepo objects, refusals answer at once, and agents take no pauses.
+      // Repositories are in LocalRepo objects, refusals have no delay, and agents do not pause.
       miniflare: { bindings: { REFUSAL_FLOOR_MS: "0", REPO_HOST: "local", AGENT_STEP_MS: "0" } },
     }),
   ],

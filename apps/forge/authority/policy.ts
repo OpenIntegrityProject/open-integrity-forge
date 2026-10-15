@@ -1,6 +1,6 @@
 // The signer policy: the keys a repository trusts and what each key may do.
-// It lives in the repository at POLICY_PATH. A commit is checked against the
-// policy of its first parent, so a commit cannot change the rules it obeys.
+// The repository keeps it at POLICY_PATH. The verifier checks a commit against
+// the policy of its first parent, so a commit cannot change the rules it obeys.
 
 import { concat, fromBase64Url, toBase64, utf8 } from "./bytes.ts";
 import { skPublicKeyBlob, skPublicKeyText } from "./webauthn-sshsig.ts";
@@ -56,20 +56,20 @@ export interface Author {
   validAfter: string;
   /** ISO 8601. The key signs nothing after this time. */
   validBefore: string;
-  /** ISO 8601. Set by a promoter's policy change: the key signs nothing after this time (R6). */
+  /** ISO 8601. A policy change by a promoter sets it. The key signs nothing after this time (R6). */
   revokedAt?: string;
 }
 
 export interface Policy {
   version: 1;
-  /** The relying party that WebAuthn approvals must name. */
+  /** The relying party ID and the origin that WebAuthn approvals must name. */
   webauthn: { rpId: string; origin: string };
   promoters: Promoter[];
   authors: Author[];
   /**
    * When true, a commit of main with one parent may change only .repo/ (R7).
    * Work then reaches main only as a merge of signed commits, so no squash
-   * can drop the authors' signatures.
+   * can remove the signatures of the authors.
    */
   mergesOnly?: boolean;
   /** How many distinct promoters must approve a release tag (R8). One when absent. */
@@ -179,11 +179,6 @@ export function withRevoked(policy: Policy, id: string, at: Date): Policy {
   return { ...policy, authors: policy.authors.map((a) => (a.id === id ? { ...a, revokedAt: at.toISOString() } : a)) };
 }
 
-/** The policy key with this id, or undefined. */
-export function keyById(policy: Policy, id: string): Promoter | Author | undefined {
-  return [...policy.promoters, ...policy.authors].find((k) => k.id === id);
-}
-
 /** A time as OpenSSH writes it in an allowed signers file: YYYYMMDDHHMMSSZ. */
 function sshTime(iso: string): string {
   return new Date(iso).toISOString().replace(/[-:T]/g, "").slice(0, 14) + "Z";
@@ -211,10 +206,10 @@ export function sshPublicKeyOfJwk(jwk: PublicJwk): string {
 }
 
 /**
- * The SSH keys of the policy in OpenSSH allowed signers format. Point
- * `gpg.ssh.allowedSignersFile` at it, and `git verify-commit` checks the
- * author signatures and a P-256 passkey's signature of the inception commit.
- * This file gives R3 and R5 only. The other rules need the forge verifier.
+ * The SSH keys of the policy in OpenSSH allowed signers format. Set
+ * `gpg.ssh.allowedSignersFile` to this file. Then `git verify-commit` checks
+ * the author signatures and the commit signatures of P-256 passkey promoters.
+ * This file gives R3, R5 and R6 only. The other rules need the forge verifier.
  */
 export function allowedSigners(policy: Policy): string {
   const lines = [

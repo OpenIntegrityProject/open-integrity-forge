@@ -1,13 +1,13 @@
 // Approvals: a promoter's passkey signs one specific change. The approval
 // payload names the repository, the ref, the parents and the tree of the
 // change. Its SHA-256 digest is the WebAuthn challenge, so the assertion is
-// valid for that change only. The approval goes into the commit message as a
-// trailer, and anyone with a clone can check it against the policy.
+// valid for that change only. The commit message holds the approval as a
+// trailer. Anyone with a clone can check the approval against the policy.
 
 import { concat, equalBytes, fromBase64Url, fromUtf8, sha256, toBase64Url, utf8 } from "./bytes.ts";
 import type { Policy, PublicJwk, WebAuthnPromoter } from "./policy.ts";
 
-export const TRAILER = "Forge-Approval";
+const TRAILER = "Forge-Approval";
 export const MAIN_REF = "refs/heads/main";
 
 export type ApprovalAction = "incept" | "policy" | "promote" | "release";
@@ -23,7 +23,7 @@ export interface ApprovalPayload {
   parents: string[];
   /** The tree of the commit to make. */
   tree: string;
-  /** When the payload was made, in milliseconds since the epoch. */
+  /** The time of the payload, in milliseconds since the epoch. */
   at: number;
   /** One line that tells the promoter what the change does. */
   summary: string;
@@ -45,14 +45,14 @@ export function encodePayload(payload: ApprovalPayload): Uint8Array<ArrayBuffer>
   return utf8(JSON.stringify({ v, repo, action, ref, parents, tree, at, summary }));
 }
 
-export function decodePayload(bytes: Uint8Array): ApprovalPayload {
+function decodePayload(bytes: Uint8Array): ApprovalPayload {
   const value = JSON.parse(fromUtf8(bytes));
   if (value?.v !== 1) throw new Error("unknown approval payload version");
   return value as ApprovalPayload;
 }
 
 /** The WebAuthn challenge for a payload, base64url. */
-export async function challengeFor(payload: Uint8Array): Promise<string> {
+async function challengeFor(payload: Uint8Array): Promise<string> {
   return toBase64Url(await sha256(payload));
 }
 
@@ -96,7 +96,7 @@ export function approvalsIn(message: string): Approval[] {
     .filter((a): a is Approval => a !== null);
 }
 
-/** The approval in a commit message, or null if it has none. A trailer that does not decode gives null too. */
+/** The last approval in a commit message, or null if it has none. A trailer that does not decode also gives null. */
 export function approvalIn(message: string): Approval | null {
   const lines = message.trimEnd().split("\n");
   const line = [...lines].reverse().find((l) => l.startsWith(`${TRAILER}: `));
@@ -117,10 +117,10 @@ function decodeTrailer(line: string): Approval | null {
 
 /**
  * The trailer of a commit that a passkey signs as a whole: the approval
- * payload alone, as base64url. The commit's SSH signature covers it, so the
- * signature is the approval and the trailer needs no assertion of its own.
+ * payload alone, as base64url. The SSH signature of the commit covers it, so
+ * the signature is the approval. The trailer needs no assertion.
  */
-export function factsLine(payload: Uint8Array): string {
+function factsLine(payload: Uint8Array): string {
   return `${TRAILER}: ${toBase64Url(utf8(JSON.stringify({ payload: toBase64Url(payload) })))}`;
 }
 
@@ -147,14 +147,14 @@ export function withTrailer(message: string, approval: Approval): string {
   return `${message.trimEnd()}\n\n${trailerLine(approval)}\n`;
 }
 
-export type ApprovalCheck =
+type ApprovalCheck =
   | { ok: true; promoter: WebAuthnPromoter; payload: ApprovalPayload }
   | { ok: false; reason: string; payload?: ApprovalPayload };
 
 const FLAG_UP = 0x01;
 const FLAG_UV = 0x04;
 
-/** An ASN.1 DER ECDSA signature as the raw r||s form WebCrypto wants. */
+/** An ASN.1 DER ECDSA signature in the raw r||s form that WebCrypto uses. */
 function rawFromDer(der: Uint8Array): Uint8Array<ArrayBuffer> {
   if (der[0] !== 0x30) throw new Error("not a DER signature");
   let offset = 2;
@@ -172,7 +172,7 @@ function rawFromDer(der: Uint8Array): Uint8Array<ArrayBuffer> {
   return concat(part(), part());
 }
 
-/** Import a public JWK. The cast lets the call typecheck under both the Node and the Workers types. */
+/** Import a public JWK. The cast makes the call typecheck with both the Node types and the Workers types. */
 function importJwk(jwk: PublicJwk, algorithm: object): Promise<CryptoKey> {
   const importKey = crypto.subtle.importKey.bind(crypto.subtle) as unknown as (
     format: "jwk",
@@ -194,10 +194,12 @@ async function verifySignature(promoter: WebAuthnPromoter, signature: Uint8Array
 }
 
 /**
- * Check an approval against a policy: the passkey is a promoter in it, the
- * person was present and verified, the relying party and origin match, the
- * challenge is the payload digest, and the signature verifies. It does not
- * check that the payload matches a commit; the caller does that.
+ * Check an approval against a policy. The passkey must be a promoter in the
+ * policy, and the authenticator must see and verify the person. The relying
+ * party and the origin must be those of the policy, and the assertion must not
+ * come from a frame. The challenge must be the payload digest, and the
+ * signature must verify. This function does not compare the payload with a
+ * commit. The caller does that.
  */
 export async function verifyApproval(approval: Approval, policy: Policy): Promise<ApprovalCheck> {
   let payloadBytes: Uint8Array;

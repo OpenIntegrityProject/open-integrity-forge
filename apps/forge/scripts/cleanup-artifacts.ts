@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// Delete the forge's repositories in an Artifacts namespace, such as after the
-// demo, before Artifacts billing (it started in October 2026 for operations
-// and storage). Prefer "Delete this project" in the forge for one project: it
-// also clears the forge's own records. This script is for what is left.
+// Delete the forge repositories in an Artifacts namespace, for example after
+// the demo. Cloudflare bills Artifacts operations and storage from October
+// 2026. For one project, prefer "Delete this project" in the forge, because it
+// also clears the records of the forge. This script is for the repositories
+// that stay after that.
 //
 //   node scripts/cleanup-artifacts.ts [--namespace forge-demo] [--prefix gordian-notes-] [--dry-run]
 //
-// It uses only documented wrangler commands, with wrangler logged in to the
-// account of the forge. With --dry-run it prints the commands and runs none.
+// It uses only documented wrangler commands, with a `wrangler login` session
+// for the account of the forge. With --dry-run, it prints the commands and
+// runs none of them.
 
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";

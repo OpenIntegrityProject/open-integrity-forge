@@ -1,7 +1,9 @@
-// The history band: main and one lane per agent, oldest on the left. A
-// commit on main with a passkey approval is a filled seal mark, an agent's
-// signed commit is a ring in the agent's colour, and a commit the verifier
-// rejects is a red cross. Each mark opens the commit sheet.
+// The history band: one lane for main and one lane for each agent, with the
+// oldest commit on the left. The inception commit is a seal. Each other commit
+// on main has a passkey approval and is a solid disc in the blue of main. A
+// signed commit of an agent is a ring in the colour of the agent. A commit that
+// the verifier rejects is a red ring with a cross. Each mark opens the commit
+// sheet.
 
 import type { ProjectState } from "../src/state.ts";
 import { laneClass, short } from "./format.ts";
@@ -32,7 +34,7 @@ const KIND_WORD: Record<Kind, string> = {
   rejected: "Rejected commit",
 };
 
-/** The commits to draw: main and what it merged, then every proposed commit not yet on main. */
+/** The commits to draw: main and the commits that it merged, then each proposed commit that is not on main yet. */
 function marks(state: ProjectState): Mark[] {
   const out = new Map<string, Mark>();
   let seq = 0;
@@ -52,7 +54,7 @@ function marks(state: ProjectState): Mark[] {
   return [...out.values()];
 }
 
-/** Order the marks so each comes after its parents, and otherwise by time. */
+/** Give each mark a column. A mark comes after its parents, and the time sets the order of the other marks. */
 function columns(list: Mark[]): Map<string, number> {
   const known = new Set(list.map((m) => m.oid));
   const waiting = new Map(list.map((m) => [m.oid, m.parents.filter((p) => known.has(p)).length]));
@@ -127,7 +129,8 @@ export class HistoryGraph {
         const side = m.lane !== "main" ? m.lane : parent.lane;
         const [x1, y1, x2, y2] = [x(p), y(parent.lane), x(m.oid), y(m.lane)];
         const d = y1 === y2 ? `M${x1},${y1}L${x2},${y2}` : `M${x1},${y1}C${x1 + COL * 0.6},${y1} ${x2 - COL * 0.6},${y2} ${x2},${y2}`;
-        edges.push(svg("path", { d, class: ["edge", laneClass(side === "main" ? null : side === "other" ? "x" : side)] }));
+        // The line into a rejected commit is red, as the commit is.
+        edges.push(svg("path", { d, class: ["edge", laneClass(side === "main" ? null : side === "other" ? "x" : side), m.kind === "rejected" && "edge-rejected"] }));
       }
     }
 
@@ -139,7 +142,7 @@ export class HistoryGraph {
       const mark =
         m.kind === "inception"
           ? (() => {
-              const s = seal({ size: 38, detail: "badge", label: "" });
+              const s = seal({ size: 38, label: "" });
               s.setAttribute("x", String(cx - 19));
               s.setAttribute("y", String(cy - 19));
               s.removeAttribute("role");

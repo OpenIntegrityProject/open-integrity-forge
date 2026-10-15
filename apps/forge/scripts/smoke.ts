@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// Run the whole story against a forge that runs now, over HTTP, as a person with a
-// software authenticator would, and time each step. Use it on `wrangler dev`,
-// or on the deployed forge to check the real Artifacts service end to end.
+// Run the full story against a live forge over HTTP, as a person with a
+// software authenticator does, and measure the time of each step. Use it on
+// `wrangler dev`, or on the deployed forge to check the real Artifacts service
+// end to end.
 //
 //   node scripts/smoke.ts <origin> [--runs 2] [--keep] [--edge]
 //
-// `--edge` is for a deployed forge: the Cloudflare edge sets the client
-// address itself. `--keep` leaves the projects in place; by default each run
-// deletes its project, its repositories and its forks at the end. The
-// software authenticator is test-only code: it signs whatever it is asked to.
+// `--edge` is for a deployed forge, where the Cloudflare edge sets the client
+// address itself. `--keep` keeps the projects. By default, each run deletes
+// its project, its repositories and its forks at the end. The software
+// authenticator is test-only code: it signs all data that it gets.
 
 import { parseArgs } from "node:util";
 import { must, session } from "./session.ts";

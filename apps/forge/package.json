@@ -7,7 +7,7 @@
     "build:verifier": "esbuild scripts/forge-verify.ts --bundle --platform=node --format=esm --target=node22 --outfile=public/forge-verify.mjs --legal-comments=eof --banner:js=\"import { createRequire as forgeRequire } from 'node:module'; const require = forgeRequire(import.meta.url);\"",
     "build:browser": "esbuild browser/app.ts browser/forge.css --bundle --format=esm --target=es2024 --outdir=public --entry-names=[name] --loader:.woff2=file --loader:.woff=file --asset-names=fonts/[name]-[hash]",
     "dev": "wrangler dev -c wrangler.local.jsonc",
-    "typecheck": "wrangler types --strict-vars=false >/dev/null && tsc --noEmit && tsc --noEmit -p authority && tsc --noEmit -p scripts && tsc --noEmit -p browser",
+    "typecheck": "wrangler types --strict-vars=false >/dev/null && tsc --noEmit && tsc --noEmit -p authority && tsc --noEmit -p scripts && tsc --noEmit -p browser && tsc --noEmit -p e2e",
     "pretest": "npm run build",
     "test": "vitest run -c vitest.authority.config.ts && vitest run && node scripts/check-production-bundle.ts",
     "test:e2e": "playwright test",

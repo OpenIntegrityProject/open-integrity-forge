@@ -24,7 +24,7 @@ describe("a person's laptop key", () => {
     expect(person.id).toBe(`${name.toLowerCase()}-laptop`);
     expect(state.policy!.authors.find((a) => a.id === person.id)!.publicKey).toBe(publicKeyText(laptop.publicKey));
     expect(await leo.forge.preparePerson(id, publicKeyText(laptop.publicKey))).toMatchObject({ result: "refused", status: 409 });
-    // Push access needs Artifacts: locally there is no Git server that takes a push.
+    // Push access needs Artifacts. The local deployment has no Git server that accepts a push.
     expect(await leo.forge.pushAccess(id, person.id)).toMatchObject({ result: "refused", refusal: { error: "local" } });
     expect(await leo.forge.tempt(id, person.id)).toMatchObject({ result: "refused", status: 404 });
 

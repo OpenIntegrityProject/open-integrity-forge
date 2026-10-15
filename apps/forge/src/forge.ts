@@ -15,16 +15,18 @@ import type { Result } from "./project.ts";
 import { keyFromRegistration } from "./promoter-key.ts";
 import type { PromoterKey, Refusal } from "./state.ts";
 
-// The forge Worker. The demo app answers /auth/*, /me and /operator/*: the
-// forge reuses its passkey sign-in as is. The forge answers /forge/*.
+// The forge Worker. The demo app answers /auth/*, /me, /me/* and /operator/*.
+// The forge uses the passkey sign-in of the demo app without change. The forge
+// answers /forge/*.
 //
-// Every /forge write needs a live session, and a project answers only its
+// Each /forge write needs a live session, and a project answers only its
 // owner. A change of main also needs an approval: a fresh, user-verified
-// passkey assertion over that exact change. That approval is the proof the
-// repository keeps, so these routes need no separate step-up. A new
-// promoter key and a reset need one.
+// passkey assertion over that exact change. The repository keeps that approval
+// as its proof, so these routes need no separate step-up. A new promoter key
+// that replaces a different one, a write token for a laptop, a mirror push and
+// a reset need one.
 
-export type ForgeOptions = AppOptions;
+type ForgeOptions = AppOptions;
 
 interface Call {
   request: Request;
@@ -289,7 +291,7 @@ const ROUTES: Route[] = [
     },
   },
   {
-    // A write token: a fresh step-up first, as for any credential the forge hands out.
+    // A write token needs a fresh step-up first.
     method: "POST",
     pattern: new RegExp(`^/forge/projects/${PROJECT_ID}/people/([a-z0-9-]{1,63})/push-access$`),
     async handler(call) {
@@ -324,7 +326,7 @@ const ROUTES: Route[] = [
     },
   },
   {
-    // A push to an outside repository with the deployment's token: a fresh step-up first.
+    // A push to a repository outside the forge, with the token of the deployment, needs a fresh step-up first.
     method: "POST",
     pattern: new RegExp(`^/forge/projects/${PROJECT_ID}/mirror$`),
     async handler(call) {

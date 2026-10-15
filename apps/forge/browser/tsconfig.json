@@ -3,7 +3,9 @@
   "compilerOptions": {
     "lib": ["es2024", "dom", "dom.iterable"],
     "types": [],
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["."]
 }

@@ -2,16 +2,18 @@ import { defineConfig } from "@playwright/test";
 
 // The forge page in Chromium with a virtual authenticator, against
 // `wrangler dev` with the local configuration: repositories in LocalRepo
-// objects, the relying party on localhost. No Cloudflare login is needed. The
-// GitHub mirror points at a local Git server, and skips the GitHub API.
+// objects, and the relying party on localhost. The tests need no Cloudflare
+// login. The GitHub mirror uses a local Git server and does not use the GitHub
+// API.
 export const PORT = 8789;
-/** The local Git server that stands in for GitHub in e2e/mirror.spec.ts. */
+/** The port of the local Git server that replaces GitHub in e2e/mirror.spec.ts. */
 export const MIRROR_PORT = 8791;
 
 /**
- * With FORGE_URL set, the tests run against that forge instead, such as the
- * deployed one with real Artifacts, and start no server. The mirror test then
- * skips itself, since it needs its local Git server.
+ * When FORGE_URL is set, the tests run against that forge, for example the
+ * deployed forge with real Artifacts, and start no server. The mirror test and
+ * the accessibility audit then skip themselves. The mirror test needs its local
+ * Git server, and the audit makes projects that it does not delete.
  */
 const deployed = process.env.FORGE_URL;
 

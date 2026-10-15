@@ -1,5 +1,5 @@
-// SSH signatures made by a passkey: OpenSSH's webauthn-sk-ecdsa format, which
-// holds a WebAuthn assertion whose challenge is the SSHSIG data to be signed.
+// SSH signatures from a passkey, in the webauthn-sk-ecdsa format of OpenSSH.
+// The format holds a WebAuthn assertion whose challenge is the SSHSIG data.
 // `ssh-keygen -Y verify` and `git verify-commit` check these with no change.
 // Specification: PROTOCOL.u2f and PROTOCOL.sshsig in the OpenSSH source.
 
@@ -7,16 +7,16 @@ import { concat, equalBytes, fromBase64, fromBase64Url, fromUtf8, sha256, toBase
 import type { PublicJwk } from "./policy.ts";
 import { armor, BEGIN, END, MAGIC, Reader, signedData, sshString, uint32 } from "./sshsig.ts";
 
-export const SK_KEY_TYPE = "sk-ecdsa-sha2-nistp256@openssh.com";
-export const WEBAUTHN_SIG_TYPE = "webauthn-sk-ecdsa-sha2-nistp256@openssh.com";
+const SK_KEY_TYPE = "sk-ecdsa-sha2-nistp256@openssh.com";
+const WEBAUTHN_SIG_TYPE = "webauthn-sk-ecdsa-sha2-nistp256@openssh.com";
 const HASH = "sha512";
 const FLAG_UP = 0x01;
 const FLAG_UV = 0x04;
 
 /**
  * A P-256 passkey as an OpenSSH security key: the curve point and the
- * application, which is the relying party ID, since OpenSSH compares its
- * SHA-256 with the authenticator data's rpIdHash.
+ * application. The application is the relying party ID, because OpenSSH
+ * compares its SHA-256 with the rpIdHash of the authenticator data.
  */
 export function skPublicKeyBlob(jwk: PublicJwk, rpId: string): Uint8Array<ArrayBuffer> {
   if (jwk.kty !== "EC" || jwk.crv !== "P-256" || !jwk.y) throw new Error("an SSH signature needs a P-256 passkey");
@@ -53,7 +53,7 @@ function derIntegers(der: Uint8Array): [Uint8Array, Uint8Array] {
   return [part(), part()];
 }
 
-/** An SSH mpint: no leading zeros, and one zero byte where the high bit is set. */
+/** An SSH mpint: no zero bytes at the start, but one zero byte before a value whose high bit is set. */
 function mpint(value: Uint8Array): Uint8Array {
   let i = 0;
   while (i < value.length - 1 && value[i] === 0) i++;
@@ -64,7 +64,8 @@ function mpint(value: Uint8Array): Uint8Array {
 /**
  * The armored SSH signature for a passkey assertion over the SSHSIG data of a
  * message. Each binary field of the assertion is base64url, as the browser's
- * JSON gives it. clientDataJSON is kept byte for byte: the signature covers it.
+ * JSON gives it. The function keeps clientDataJSON byte for byte, because the
+ * signature covers it.
  */
 export function webauthnSignature(
   keyBlob: Uint8Array,
@@ -137,14 +138,14 @@ export async function webauthnAssertion(armored: string): Promise<{ authenticato
   }
 }
 
-export type WebauthnCheck =
+type WebauthnCheck =
   | { ok: true; keyBlob: Uint8Array; fingerprint: string; rpId: string; origin: string; flags: number }
   | { ok: false; reason: string };
 
 /**
- * Check an armored webauthn-sk signature over `message`, as OpenSSH does, and
- * also require that the person was present and verified. It returns the key
- * that made it; the caller decides whether it trusts that key.
+ * Check an armored webauthn-sk signature over `message`, as OpenSSH does. Also
+ * require that the authenticator saw and verified the person. It returns the
+ * key that made the signature. The caller decides whether it trusts that key.
  */
 export async function verifyWebauthn(armored: string, message: Uint8Array | string, namespace = "git"): Promise<WebauthnCheck> {
   const no = (reason: string): WebauthnCheck => ({ ok: false, reason });

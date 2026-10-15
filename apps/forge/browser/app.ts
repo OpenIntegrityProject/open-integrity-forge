@@ -1,15 +1,18 @@
-// The forge page. The demo's panes handle sign-in and settings (panes.ts).
-// Signed out, the page explains the forge. Signed in, it starts a project or
-// shows one on the stage: its history, its rules, its agents and their
-// proposals, and the check outside the forge. Approvals go through the
-// approval sheet, which shows the exact change before the passkey signs it.
-// Bundled into public/app.js by esbuild; see build.command in wrangler.jsonc.
+// The forge page. It uses the demo's sign-in, codes and settings panes
+// (panes.ts). Signed out, the page tells what the forge does. Signed in, it
+// starts a project or shows one on the stage. The stage shows the history, the
+// rules, the agents and their proposals, and the check outside the forge. Each
+// approval uses the approval sheet. That sheet shows the exact change
+// before the passkey signs it. esbuild bundles this file into public/app.js;
+// see `build:browser` in package.json.
 
 import { DemoClient } from "../../demo/browser/demo-client.ts";
 import { status } from "../../demo/browser/dom.ts";
 import { Flows } from "../../demo/browser/flows.ts";
 import { showApp } from "../../demo/browser/shell.ts";
 import { ForgeClient, type ForgeMe, type Outcome } from "./forge-client.ts";
+import { ask } from "./ask.ts";
+import { copy } from "./copy.ts";
 import { byId, fill, h, reducedMotion } from "./h.ts";
 import { lend } from "./lend.ts";
 import { wirePanes } from "./panes.ts";
@@ -37,10 +40,10 @@ function guard<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
 let passkeyActionRunning = false;
 
 /**
- * Show whether a passkey action runs: each button that starts one is
- * disabled until it ends. A press is then never dropped without a sign, and
- * an action that ends with network requests after its sheet closes does not
- * swallow the next press.
+ * Show if a passkey action runs. Each button that starts a passkey action is
+ * disabled until the action ends, so the page never ignores a press without a
+ * sign. This is also true for the network requests that an action can send
+ * after its sheet closes.
  */
 function setBusy(busy: boolean) {
   passkeyActionRunning = busy;
@@ -50,7 +53,7 @@ function setBusy(busy: boolean) {
   }
 }
 
-/** One passkey action at a time, as on the demo page. */
+/** Run one passkey action at a time, as the demo page does. */
 function passkeyAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
   return guard(async (...args: A) => {
     if (passkeyActionRunning) return;
@@ -65,7 +68,7 @@ function passkeyAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** A short message at the foot of the page, which goes after a while. */
+/** Show `message` in the toast for 6 seconds. When a pane is open, `status` writes it in that pane. */
 function say(message: string) {
   status(message);
   const toast = byId("status");
@@ -113,7 +116,11 @@ const stage = new Stage(() => passkeyActionRunning, {
     const id = shownId();
     if (!id) return;
     const state = await approvals.run(() => forge.prepareRelease(id, name));
-    if (state) received(state);
+    if (!state) return;
+    // This name is now in use, so reset the field to its default value. The next render then shows the next name.
+    const field = document.getElementById("release-name");
+    if (field instanceof HTMLInputElement) field.value = field.defaultValue;
+    received(state);
   }),
   redo: guard(async (proposalId: string) => {
     const id = shownId();
@@ -123,7 +130,7 @@ const stage = new Stage(() => passkeyActionRunning, {
   }),
   promote: passkeyAction((proposalId: string) => promote(proposalId)),
   openCommit: guard(async (oid: string) => {
-    if (current) await commits.open(current.id, oid, (id) => current?.agents.find((a) => a.id === id)?.name ?? null);
+    if (current) await commits.open(current.id, oid, current.repoId, (id) => current?.agents.find((a) => a.id === id)?.name ?? null);
   }),
   verify: guard(() => verify()),
   commands: guard(() => commands()),
@@ -151,13 +158,13 @@ async function reload() {
 
 // --- views ------------------------------------------------------------------------
 
+/** Show the promoter key in the account menu, and its seal on the account button. Without one, show a warning mark. */
 function promoterBadge() {
-  const badge = byId("promoter-badge");
-  const text = byId("promoter-badge-text");
-  badge.classList.toggle("badge-missing", !me?.promoter);
-  fill(byId("promoter-badge-seal"), me?.promoter ? seal({ size: 26, detail: "badge", label: "" }) : h("span", { class: "badge-warn" }, "!"));
-  text.textContent = me?.promoter ? `Promoter key ${me.promoter.label ?? ""}` : "No promoter key";
-  badge.title = me?.promoter ? "Copy the public key of your promoter passkey" : "Make a new passkey your promoter key";
+  const promoter = me?.promoter;
+  byId("account-button").classList.toggle("badge-missing", !promoter);
+  fill(byId("promoter-badge-seal"), promoter ? seal({ size: 24, label: "" }) : h("span", { class: "badge-warn" }, "!"));
+  byId("promoter-key-name").textContent = promoter ? (promoter.label ?? promoter.credentialId.slice(0, 10)) : "none yet";
+  byId("promoter-badge").textContent = promoter ? "Copy its public key" : "Make a new passkey my promoter key";
 }
 
 function startView() {
@@ -167,7 +174,7 @@ function startView() {
       ? h(
           "div",
           { class: "promoter-ready" },
-          seal({ size: 64, detail: "badge", label: "" }),
+          seal({ size: 64, label: "" }),
           h(
             "p",
             null,
@@ -209,10 +216,11 @@ function projectSwitch() {
 }
 
 /**
- * Show the view the address names: a project, or the start. The address can
- * change after the project is already here (a new project sets it once its
- * approval is done), so a project already shown stays. Another project's
- * stage stays hidden until its state arrives, so no button shows that cannot act.
+ * Show the view that the address names: a project, or the start view. The
+ * address can change after the project is already on the page. For example, a
+ * new project sets the address after its approval. Thus a project that the
+ * page already shows stays. The stage of another project stays hidden until
+ * its state arrives, so that the page shows no button that cannot operate.
  */
 function route() {
   const id = projectIdFromHash();
@@ -221,6 +229,8 @@ function route() {
   if (current?.id !== id) {
     current = null;
     stage.reset();
+    // A story that ended, or that waits for an approval, belongs to its project. Close its ribbon here.
+    if (!story.isPlaying) story.stop();
   }
   byId("start").hidden = Boolean(id);
   byId("stage").hidden = !current;
@@ -240,13 +250,16 @@ function route() {
 async function refresh() {
   me = await forge.me();
   showApp(me ? { recordId: me.recordId, memberName: me.memberName, operator: false } : null);
+  // Signed in, the signed-out actions are hidden and use no space in the app bar. Thus the account button stays at its right edge.
+  byId("signed-out-actions").hidden = me !== null;
+  byId("open-register").hidden = me !== null;
   promoterBadge();
   route();
 }
 
 // --- actions ------------------------------------------------------------------------
 
-/** After a passkey is made here, make it the promoter key if there is none yet. */
+/** After the page makes a passkey, make it the promoter key if there is no promoter key. With `replace`, always do it. */
 async function passkeyMade(replace = false) {
   const created = passkeys.takeCreated();
   if (!created || (me?.promoter && !replace)) return;
@@ -276,15 +289,15 @@ async function createProject(name: string): Promise<boolean> {
   me = await forge.me();
   if (projectId) open(projectId);
   if (state) received(state);
-  // The inception commit is signed; the second step sets the first policy.
+  // The passkey signed the inception commit. Now `incept` does the second step, which sets the first policy.
   if (state && !state.policy) return incept();
   return Boolean(state);
 }
 
-/** The project the page shows: the one the address names, even while its state is on its way. */
+/** The project that the page shows: the one that the address names, also while its state is not here yet. */
 const shownId = () => current?.id ?? projectIdFromHash();
 
-/** The inception, in two passkey steps: sign the empty inception commit, then approve the first policy. */
+/** Do the inception in two passkey steps. First, sign the empty inception commit. Then, approve the first policy. */
 async function incept(): Promise<boolean> {
   const id = shownId();
   if (!id) return false;
@@ -357,34 +370,60 @@ async function commands() {
   stage.render(current);
 }
 
-function waitFor(ready: (s: ProjectState) => boolean, ms = 60_000): Promise<ProjectState> {
+/** Wait until `ready` is true for the state of the shown project, or until `signal` aborts. */
+function waitFor(ready: (s: ProjectState) => boolean, signal: AbortSignal): Promise<ProjectState> {
   if (current && ready(current)) return Promise.resolve(current);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      listeners.delete(listener);
-      reject(new Error("this step took too long"));
-    }, ms);
     const listener = (s: ProjectState) => {
       if (!ready(s)) return;
-      clearTimeout(timer);
       listeners.delete(listener);
+      signal.removeEventListener("abort", abort);
       resolve(s);
     };
+    const abort = () => {
+      listeners.delete(listener);
+      reject(signal.reason);
+    };
+    if (signal.aborted) return abort();
     listeners.add(listener);
+    signal.addEventListener("abort", abort, { once: true });
   });
 }
 
+/** Whether the element is rendered. Safari before 17.4 has no checkVisibility, so it falls back to the element's boxes. */
+function visible(element: HTMLElement): boolean {
+  return typeof element.checkVisibility === "function" ? element.checkVisibility() : element.getClientRects().length > 0;
+}
+
+/**
+ * Scroll to a part of the page, open it, and put an outline on it for a short
+ * time. Then move the focus to its region, so that the keyboard continues from
+ * there. When the person types in a field, the focus stays in that field.
+ */
 function spotlight(selector: string) {
   const element = document.querySelector<HTMLElement>(selector);
-  if (!element) return;
+  if (!element || !visible(element)) return;
   if (element instanceof HTMLDetailsElement) element.open = true;
-  element.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+  // The story ribbon stays at the top of the window. Add a scroll margin, so that the ribbon does not cover the part.
+  const ribbon = byId("story");
+  element.style.scrollMarginTop = ribbon.hidden ? "" : `${ribbon.offsetHeight + 24}px`;
+  const tall = element.offsetHeight > innerHeight / 2;
+  element.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: tall ? "start" : "center" });
   element.classList.add("spotlight");
   setTimeout(() => element.classList.remove("spotlight"), 2600);
+  const typing = document.activeElement?.matches("input, textarea, select, [contenteditable]");
+  const region = element.closest<HTMLElement>("#history, .region, #outside");
+  if (region && !typing) region.focus({ preventScroll: true });
 }
 
 const story = new Story({
   state: () => current,
+  shown: projectIdFromHash,
+  open: (projectId) => {
+    if (projectId) open(projectId);
+    else location.hash = "";
+  },
+  away: () => document.hidden || document.querySelector("dialog[open]") !== null,
   waitFor,
   createProject: () => createProject((byId<HTMLInputElement>("project-name").value || "gordian-notes").trim()),
   admit: () => (current?.repoId ? admit() : incept()),
@@ -401,7 +440,6 @@ const panes = wirePanes({
   flows,
   passkeyAction,
   guard,
-  isPasskeyActionRunning: () => passkeyActionRunning,
   refresh,
   passkeyMade: () => passkeyMade(),
   signedOut: async () => {
@@ -411,10 +449,15 @@ const panes = wirePanes({
   },
 });
 
-fill(byId("hero-seal"), 
-  seal({ size: 380, ring: "approved by a person ✦ checked on any clone ✦ agents may only write ✦ ", center: "main", label: "" }),
-);
-byId("hero-sign-in").addEventListener("click", () => panes.openSignIn());
+fill(byId("hero-seal"), seal({ size: 380, ring: "approved by a person ✦ checked on any clone ✦ agents may only write ✦ ", label: "" }));
+byId("hero-sign-in").addEventListener("click", panes.signIn);
+byId("hero-register").addEventListener("click", panes.openRegister);
+// Signed in, the wordmark shows the start view without a reload. Thus a story that plays does not stop.
+document.querySelector(".wordmark")!.addEventListener("click", (event) => {
+  if (!me) return;
+  event.preventDefault();
+  location.hash = "";
+});
 byId("create-form").addEventListener(
   "submit",
   passkeyAction(async (event: Event) => {
@@ -429,9 +472,11 @@ byId("project-select").addEventListener("change", (event) => {
 byId("promoter-badge").addEventListener(
   "click",
   passkeyAction(async () => {
-    if (!me?.promoter) return newPromoterKey();
-    await navigator.clipboard.writeText(JSON.stringify(me.promoter.publicKey));
-    say("Copied the public key of your promoter passkey.");
+    if (!me?.promoter) {
+      byId("account-menu").hidePopover();
+      return newPromoterKey();
+    }
+    await copy(byId<HTMLButtonElement>("promoter-badge"), JSON.stringify(me.promoter.publicKey));
   }),
 );
 const playStory = guard(async () => {
@@ -443,7 +488,14 @@ byId("start-story").addEventListener("click", playStory);
 byId("reset").addEventListener(
   "click",
   passkeyAction(async () => {
-    if (!current || !confirm(`Delete ${current.name}, its repositories, its forks and its agents? This cannot be undone.`)) return;
+    if (!current) return;
+    const deleting = await ask({
+      title: `Delete ${current.name}?`,
+      message: "Its repositories, its forks and its agents go too. This cannot be undone.",
+      confirm: "Delete the project",
+      danger: true,
+    });
+    if (!deleting || !current) return;
     const done = await forge.reset(current.id);
     if (done.result !== "ok") return say(reason(done));
     story.stop();
@@ -452,7 +504,7 @@ byId("reset").addEventListener(
     await refresh();
   }),
 );
-// A project with no inception commit yet offers to approve it from the history band.
+// A project without its inception commit or its first policy shows an approval button in the history band.
 byId("graph").addEventListener("click", (event) => {
   if ((event.target as HTMLElement).closest("[data-action=incept]")) passkeyAction(incept)();
 });

@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-// Check a person's laptop flow end to end on a deployed forge with Artifacts:
-// admit a new SSH key under a passkey approval, take the push commands the
-// forge gives, sign a commit with that key and push it with plain git. The
-// forge hears the push, verifies it (R3 passes with the person's key), and a
-// passkey approval promotes it.
+// Check the laptop flow of a person end to end on a deployed forge with
+// Artifacts. Admit a new SSH key under a passkey approval, and take the push
+// commands that the forge gives. Sign a commit with that key and push it with
+// plain git. The forge gets the push event and verifies the push (R3 passes
+// with the key of the person). Then a passkey approval promotes it.
 //
 //   node scripts/laptop-check.ts https://<host> [--namespace forge-demo] [--queue forge-artifacts-events] [--keep]
 //
-// It needs wrangler logged in to the forge's account, to subscribe the fork
-// when the forge does not do it itself. At the end it removes what it made.
+// It needs a `wrangler login` session for the account of the forge, to
+// subscribe the fork when the forge does not do it itself. At the end, it
+// deletes its subscription. It also deletes the project, unless you give
+// --keep.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
