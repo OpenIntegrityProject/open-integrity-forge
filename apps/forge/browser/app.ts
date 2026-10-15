@@ -130,7 +130,7 @@ const stage = new Stage(() => passkeyActionRunning, {
   }),
   promote: passkeyAction((proposalId: string) => promote(proposalId)),
   openCommit: guard(async (oid: string) => {
-    if (current) await commits.open(current.id, oid, (id) => current?.agents.find((a) => a.id === id)?.name ?? null);
+    if (current) await commits.open(current.id, oid, current.repoId, (id) => current?.agents.find((a) => a.id === id)?.name ?? null);
   }),
   verify: guard(() => verify()),
   commands: guard(() => commands()),
@@ -390,6 +390,11 @@ function waitFor(ready: (s: ProjectState) => boolean, signal: AbortSignal): Prom
   });
 }
 
+/** Whether the element is rendered. Safari before 17.4 has no checkVisibility, so it falls back to the element's boxes. */
+function visible(element: HTMLElement): boolean {
+  return typeof element.checkVisibility === "function" ? element.checkVisibility() : element.getClientRects().length > 0;
+}
+
 /**
  * Scroll to a part of the page, open it, and put an outline on it for a short
  * time. Then move the focus to its region, so that the keyboard continues from
@@ -397,7 +402,7 @@ function waitFor(ready: (s: ProjectState) => boolean, signal: AbortSignal): Prom
  */
 function spotlight(selector: string) {
   const element = document.querySelector<HTMLElement>(selector);
-  if (!element || !element.checkVisibility()) return;
+  if (!element || !visible(element)) return;
   if (element instanceof HTMLDetailsElement) element.open = true;
   // The story ribbon stays at the top of the window. Add a scroll margin, so that the ribbon does not cover the part.
   const ribbon = byId("story");

@@ -119,9 +119,12 @@ test("a person creates a project, agents propose, the rogue key is rejected, and
   await page.keyboard.press("Enter");
   await expect(page.locator("#commit")).toContainText("Root of trust", { timeout: 30_000 });
   await expect(page.locator("#commit")).toContainText("Signed by a passkey, as an SSH signature");
+  // Only the inception commit is labelled with the identifier of the repository.
+  await expect(page.locator("#commit")).toContainText(/Identifier\s*did:repo:[0-9a-f]{40}/);
   await page.locator("#commit-close").click();
   await page.locator(".graph .node").nth(1).click();
   await expect(page.locator("#commit")).toContainText("Approved by a passkey", { timeout: 30_000 });
+  await expect(page.locator("#commit")).not.toContainText("Identifier");
   await page.locator("#commit-close").click();
 
   await page.getByRole("button", { name: "Verify from a fresh clone" }).click();

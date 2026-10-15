@@ -256,7 +256,7 @@ export class CommitSheet {
     byId("commit-close").addEventListener("click", () => this.dialog.close());
   }
 
-  async open(projectId: string, oid: string, agentName: (id: string | null | undefined) => string | null) {
+  async open(projectId: string, oid: string, repoId: string | null, agentName: (id: string | null | undefined) => string | null) {
     this.body.replaceChildren(h("h2", { id: "commit-title" }, "Commit ", mono(short(oid), oid)), h("p", { class: "muted" }, "Reading it from the repository…"));
     if (!this.dialog.open) this.dialog.showModal();
     const got = await this.forge.commit(projectId, oid);
@@ -264,10 +264,10 @@ export class CommitSheet {
       this.body.replaceChildren(h("h2", { id: "commit-title" }, "Commit ", mono(short(oid), oid)), h("p", null, refusalText(got)));
       return;
     }
-    this.body.replaceChildren(...this.detail(got.value, agentName));
+    this.body.replaceChildren(...this.detail(got.value, repoId, agentName));
   }
 
-  private detail(c: CommitDetail, agentName: (id: string | null | undefined) => string | null): Node[] {
+  private detail(c: CommitDetail, repoId: string | null, agentName: (id: string | null | undefined) => string | null): Node[] {
     const [subject, ...rest] = c.message.trimEnd().split("\n");
     const report = c.report;
     const signer = report?.signer;
@@ -314,8 +314,8 @@ export class CommitSheet {
         "dl",
         { class: "facts" },
         fact("Commit", mono(short(c.oid), c.oid)),
-        // A commit with no parents is the inception commit. Its id is the identifier of the repository.
-        ...(c.parents.length === 0 ? fact("Identifier", mono(didRepo(c.oid))) : []),
+        // The inception commit's id is the identifier of the repository. Another commit with no parents, such as one pushed to a fork, is not.
+        ...(repoId !== null && c.oid === repoId ? fact("Identifier", mono(didRepo(c.oid))) : []),
         fact(c.parents.length === 1 ? "Parent" : "Parents", ...(c.parents.length ? c.parents.map((p) => mono(short(p), p)) : ["None: the root"])),
         fact("Tree", mono(short(c.tree), c.tree)),
         fact("Author", `${c.author.name}, ${clock(c.author.timestamp * 1000)}`),
