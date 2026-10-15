@@ -1,6 +1,8 @@
 // The story: the steps of the demo in order, with a caption for each step. It
 // does the steps itself, and stops at each approval so that the person can
-// read the change and use their passkey. At its end, "Keep going" plays the
+// read the change and use their passkey. Played on a project that is already
+// part way, it starts after the furthest step the project has done: a step
+// that only shows something counts as done once a later step is. At its end, "Keep going" plays the
 // rest of the tour the video shows: a conflict and a redo, a release, a
 // revocation, and an approval as a Gordian Envelope. The story holds at its next action in
 // four conditions. These are a pause, another project on the page, an open
@@ -61,7 +63,7 @@ interface Step {
   caption: string;
   /** The part of the page that this step changes, for "Show me". */
   where?: string;
-  /** True when the step is already done, so the story skips it. */
+  /** True when the project has done this step. Play starts after the furthest such step. */
   done?(s: ProjectState | null): boolean;
   run(a: StepActions): Promise<boolean | void>;
 }
@@ -70,6 +72,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The interval at which the story examines whether it holds. */
 const POLL_MS = 200;
+
+const adaPromoted = (s: ProjectState | null) => s?.proposals.find((p) => p.agentId === "ada" && p.taskId !== "readme-title" && p.status === "promoted") ?? null;
+
+/** True once a fresh clone was verified after Ada's change reached main. */
+const verifiedAfterPromotion = (s: ProjectState | null) => {
+  const ada = adaPromoted(s);
+  return Boolean(ada && s?.freshVerify && s.freshVerify.at >= ada.updatedAt);
+};
 
 const STEPS: Step[] = [
   {
@@ -144,6 +154,7 @@ const STEPS: Step[] = [
   {
     caption: "Verify the whole history from a fresh clone, pinned to the did:repo address of the repository. No forge record is used.",
     where: "#outside",
+    done: verifiedAfterPromotion,
     async run(a) {
       await a.spotlight("#outside");
       await a.verify();
@@ -245,6 +256,15 @@ const MORE: Step[] = [
     },
   },
 ];
+
+/** The index of the step after the furthest one the project has done, or 0. */
+function resumeAt(steps: Step[], s: ProjectState | null): number {
+  let last = -1;
+  steps.forEach((step, index) => {
+    if (step.done?.(s)) last = index;
+  });
+  return last + 1;
+}
 
 /** Why the story holds, or null when it does not hold. */
 type Hold = "paused" | "left" | "away" | null;
@@ -466,6 +486,8 @@ export class Story {
   /** Play the story, or with `part` "more", the rest of the tour. */
   async play(part: "story" | "more" = "story") {
     if (this.running) return;
+    // A project verified after Ada's promotion has done the story: the last step only shows the commands of that check. It continues with the rest of the tour.
+    if (part === "story" && verifiedAfterPromotion(this.actions.state())) part = "more";
     this.steps = part === "more" ? MORE : STEPS;
     const play = new AbortController();
     const signal = play.signal;
@@ -477,8 +499,10 @@ export class Story {
     // The hold can also change while a step waits, so examine it at intervals.
     this.watch = setInterval(() => this.check(), POLL_MS);
     const a = this.stepActions(signal);
+    const start = resumeAt(this.steps, a.state());
     try {
       for (const [index, step] of this.steps.entries()) {
+        if (index < start) continue;
         await this.held(signal);
         if (step.done?.(a.state())) continue;
         this.show(index);
