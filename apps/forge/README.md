@@ -1,10 +1,10 @@
 # Open Integrity Forge Demo
 
-A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudflare.com/artifacts/), built on [Open Integrity](https://github.com/OpenIntegrityProject): validity lives in Git, not in the platform. Agents work at the same time, each in its own fork and with its own short-lived signing key. Only a person's passkey can promote a change to `main`, and it does so by signing the commit itself. Each repository starts with an Open Integrity inception commit and carries its own signer policy, so any clone can check every commit with no server, on any host, and stock `git verify-commit` checks every commit of main.
+A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudflare.com/artifacts/), built on [Open Integrity](https://github.com/OpenIntegrityProject): validity lives in Git, not in the platform. Agents work at the same time, each in its own fork and with its own short-lived signing key. Only a person's passkey can promote a change to `main`, and it does so by signing the commit itself. Each repository starts with an Open Integrity inception commit and carries its own signer policy, so any clone can check every commit with no server, on any host, and stock `git verify-commit` checks every commit of `main`.
 
 **Live demo:** https://forgedemo.gordianstack.com (sign in with a passkey, then "Play the story")
 
-The question the forge answers for each change is whether an authorized person intended that specific change. The answer is not a record on the platform. It is a signed object in Git, checked against the signer policy committed in the repository and rooted in its inception commit.
+The forge determines whether an authorized person intended each specific change. It does so not through a record on the platform, but with a signed object in Git, checked against the signer policy committed in the repository and rooted in its inception commit.
 
 The forge is built on this repository's passkey library and reuses the demo's sign-in as is. The library offers ES256 before EdDSA, because only a P-256 passkey can make the SSH signature that Git checks.
 
@@ -14,7 +14,7 @@ The forge is built on this repository's passkey library and reuses the demo's si
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. The new rules need your approval too.
 3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. Every proposal is checked against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, and the repository still rejects it: a key can never authorize itself.
-5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree and the message, as an SSH signature that `git verify-commit` checks.
+5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree, and the message, as an SSH signature that `git verify-commit` checks.
 6. **Anyone checks it anywhere.** A fresh clone on a laptop, or a mirror on any Git host, gives the same answer, with no forge in the loop.
 
 "Play the story" on the page walks through these steps, and stops where your passkey is needed.
@@ -46,17 +46,27 @@ The policy is `.repo/config/verification/policy.json`. A commit is checked again
 
 ### policy.json and Open Integrity's signer files
 
-An Open Integrity repository such as [oi-demo](https://github.com/OpenIntegrityProject/oi-demo) keeps its signer policy as three OpenSSH allowed signers files in `.repo/config/verification/`: `allowed_commit_signers` for any commit, `allowed_main_signers` for main's first-parent chain and for changes to those files, and `allowed_tag_signers` for release tags. Its verifier checks each commit against them with `ssh-keygen`, and this repository verifies itself the same way.
+An Open Integrity repository such as [oi-demo](https://github.com/OpenIntegrityProject/oi-demo) keeps its signer policy as three OpenSSH allowed signers files in `.repo/config/verification/`: `allowed_commit_signers` for any commit, `allowed_main_signers` for `main`'s first-parent chain and for changes to those files, and `allowed_tag_signers` for release tags. Its verifier checks each commit against them with `ssh-keygen`, and this repository verifies itself the same way.
 
-The forge keeps its rules in one file, `policy.json`, because it needs facts an allowed signers line cannot hold: a passkey promoter as a WebAuthn credential, the promoter that admitted each agent key, when a key was revoked, `mergesOnly`, and how many approvals a release takes. From it the forge generates `allowed_commit_signers`, so stock Git checks every signature, but it writes no `allowed_main_signers` or `allowed_tag_signers`, and Open Integrity's verifier does not yet pass a forge repository. Writing those two files from the policy, so that one repository passes both verifiers, is the next step.
+The forge keeps its rules in one file, `policy.json`, because it needs facts that an allowed-signers line cannot hold: a passkey promoter as a WebAuthn credential, the promoter that admitted each agent key, when a key was revoked, `mergesOnly`, and how many approvals a release takes. From that, the forge generates `allowed_commit_signers`, so stock Git checks every signature, but it writes no `allowed_main_signers` or `allowed_tag_signers`, and Open Integrity's verifier does not yet pass a forge repository. Writing those two files from the policy, so that one repository passes both verifiers, is the next step.
 
-Each approval can also be read as a Gordian Envelope (the commit sheet shows its `ur:envelope`, and an elided form with the same digest that leaves out the authenticator data and signature); the encoder matches the reference `bc-envelope-cli` byte for byte. For a commit of main the assertion's challenge is the commit itself, so its Envelope is read together with that commit.
+Each approval can also be read as a Gordian Envelope (the commit sheet shows its `ur:envelope`, and an elided form with the same digest that leaves out the authenticator data and signature); the encoder matches the reference `bc-envelope-cli` byte for byte. For a commit of `main` the assertion's challenge is the commit itself, so its Envelope is read together with that commit.
 
-A promoter approves a change of main by signing the commit itself: a WebAuthn assertion whose challenge is the commit's SSHSIG data, stored as the commit's SSH signature in OpenSSH's `webauthn-sk-ecdsa-sha2-nistp256@openssh.com` format. The commit message ends with a `Forge-Approval` trailer holding a payload that names the repository, the ref, the parents and the tree, which the signature covers. A release tag carries approvals in its message instead: WebAuthn assertions whose challenge is the SHA-256 digest of such a payload. Agent commits carry ordinary SSH signatures, so `git verify-commit` checks every commit of main and every agent commit with the generated `.repo/config/verification/allowed_commit_signers`, which lists a P-256 passkey as the OpenSSH security key (`sk-ecdsa-sha2-nistp256@openssh.com`) it signs with.
+A promoter approves a change of `main` by signing the commit itself: a WebAuthn assertion whose challenge is the commit's SSHSIG data, stored as the commit's SSH signature in OpenSSH's `webauthn-sk-ecdsa-sha2-nistp256@openssh.com` format. The commit message ends with a `Forge-Approval` trailer holding a payload that names the repository, the ref, the parents and the tree, which the signature covers. A release tag carries approvals in its message instead: WebAuthn assertions whose challenge is the SHA-256 digest of such a payload. Agent commits carry ordinary SSH signatures, so `git verify-commit` checks every commit of main and every agent commit with the generated `.repo/config/verification/allowed_commit_signers`, which lists a P-256 passkey as the OpenSSH security key (`sk-ecdsa-sha2-nistp256@openssh.com`) it signs with.
+
+## Layout
+
+| Path | What |
+| --- | --- |
+| `authority/` | The verifier and what it needs: policy, approvals, SSH signatures, Git helpers. It needs no server and runs in Workers, Node and Bun. |
+| `src/` | The Worker: routes (`forge.ts`), the `Project`, `AgentRun`, `Person`, `RepoIndex` and `LocalRepo` Durable Objects, the repo hosts, the push event consumer, the template and the agents' tasks. |
+| `browser/` | The page: stage, history graph, approval and commit sheets, the story, the seal, and the stylesheet. |
+| `scripts/` | `forge-verify.ts`, `smoke.ts`, `subscribe-pushes.ts`, `cleanup-artifacts.ts`, `check-production-bundle.ts`. |
+| `wrangler.jsonc`, `wrangler.local.jsonc` | The deployed configuration, with Artifacts, and the local one, without. `scripts/config.test.ts` keeps them in step. |
 
 ## Run it locally
 
-You need Node 23.6 or later, and Git. No Cloudflare account is needed: locally, repositories live in Durable Objects that keep the Artifacts contract (repo-scoped tokens with a scope and an expiry, forks, pushes that must name the ref they replace).
+You need Node 23.6 or later and Git. No Cloudflare account is needed: locally, repositories live in Durable Objects that keep the Artifacts contract (repo-scoped tokens with a scope and an expiry, forks, pushes that must name the ref they replace).
 
 ```sh
 npm install
@@ -96,7 +106,7 @@ shasum -a 256 forge-verify.mjs                                # must match
 node forge-verify.mjs notes --repo <the id of the first commit>
 ```
 
-It prints each commit with its rules, and exits 0 when all of them pass, 1 when one fails. `--json` prints the full report. To use the source instead of the file, run `node apps/forge/scripts/forge-verify.ts` from this repository. Git alone checks the inception commit and the agents' signatures (in UTC, since under daylight saving time git on macOS checks a key's window an hour late):
+It prints each commit with its rules, and exits `0` when all of them pass, `1` when one fails. `--json` prints the full report. To use the source instead of the file, run `node apps/forge/scripts/forge-verify.ts` from this repository. Git alone checks the inception commit and the agents' signatures (in UTC, since under daylight saving time git on macOS checks a key's window an hour late):
 
 ```sh
 TZ=UTC git -C notes -c gpg.ssh.allowedSignersFile=.repo/config/verification/allowed_commit_signers log --show-signature
@@ -121,7 +131,7 @@ The verifier reads only the repository, so a mirror on any Git host gives the sa
 ## Demo simplifications
 
 - **The agents are scripted.** Their tasks are fixed so the demo runs the same way each time. They are forge objects, not library principals: the library's agent records and grants are future work.
-- **One promoter per project**, the creator's passkey. The policy format and the verifier take more (R8 checks releases that need several), and SSH promoter keys too; the page collects one approval per change.
+- **One promoter per project**, the creator's passkey. The policy format and the verifier take more (R8 checks releases that need several), as well as SSH promoter keys; the page collects one approval per change.
 - **Agents are forge objects**, not passkey-library principals: grants in the library are future work, and device-limited identities need hardware attestation the library does not ask for.
 - **The page trusts the forge for the challenge.** The sheet shows the change and its message, but the passkey signs the challenge the forge sends; the page does not yet rebuild the commit and check it. A forge that showed one change and sent another would get a valid signature on the other, and no verifier could tell afterwards. Rebuilding the commit in the page closes this.
 - **A release approval binds the repository, ref, commit and tree, not the tag message.** The platform could reword a release tag's message without breaking its approvals. A commit of main is signed as a whole, message and author included.
@@ -130,16 +140,6 @@ The verifier reads only the repository, so a mirror on any Git host gives the sa
 - **Merge commits only.** A squash would drop the agents' signatures.
 - **The platform writes main.** It holds the only write token for the project repository and writes only with a verified approval. That is an operational choice: validity comes from the repository, and the verifier flags any commit the rules do not allow, whoever pushed it.
 - **The verifier the workflow runs is served by the forge**, pinned by digest in the first commit. Rebuild it from source (`npm run build:verifier -w forge`) to compare the digest; the build is reproducible with the same dependency versions.
-
-## Layout
-
-| Path | What |
-| --- | --- |
-| `authority/` | The verifier and what it needs: policy, approvals, SSH signatures, Git helpers. It needs no server and runs in Workers, Node and Bun. |
-| `src/` | The Worker: routes (`forge.ts`), the `Project`, `AgentRun`, `Person`, `RepoIndex` and `LocalRepo` Durable Objects, the repo hosts, the push event consumer, the template and the agents' tasks. |
-| `browser/` | The page: stage, history graph, approval and commit sheets, the story, the seal, and the stylesheet. |
-| `scripts/` | `forge-verify.ts`, `smoke.ts`, `subscribe-pushes.ts`, `cleanup-artifacts.ts`, `check-production-bundle.ts`. |
-| `wrangler.jsonc`, `wrangler.local.jsonc` | The deployed configuration, with Artifacts, and the local one, without. `scripts/config.test.ts` keeps them in step. |
 
 ## License
 
