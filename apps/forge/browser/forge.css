@@ -1550,6 +1550,21 @@ dialog p[role="status"]:not(:empty) {
 #account-details {
   margin-top: 0.75rem;
 }
+/* Operator: shown only to an operator. Remove cannot be undone, so it stands last and apart. */
+#operator-form {
+  margin: 0.5rem 0 0.75rem;
+}
+#operator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+#operator-actions [value="remove"] {
+  margin-inline-start: auto;
+}
+#operator-result {
+  overflow-wrap: anywhere;
+}
 #account-details summary {
   list-style: none;
   font-weight: 600;

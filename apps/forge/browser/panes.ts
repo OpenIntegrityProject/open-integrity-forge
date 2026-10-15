@@ -3,12 +3,15 @@
 // opens only when that request does not sign in, so that the person can try
 // again or recover. Register opens the same pane with only the register form.
 // After the page makes a passkey, that passkey can become the promoter key
-// (see `passkeyMade`).
+// (see `passkeyMade`). An operator, named by OPERATOR_RECORD_IDS, also gets the
+// demo's operator section in settings, with the forge's own confirm sheet.
 
 import type { PublicKeyCredentialHint } from "passkey-cloudflare/browser";
 import { CodesPane } from "../../demo/browser/codes-pane.ts";
 import { $, input, openPane, pane, paneStatus, status, type PaneId } from "../../demo/browser/dom.ts";
+import type { OperatorAction } from "../../demo/browser/demo-client.ts";
 import type { Flows, Told } from "../../demo/browser/flows.ts";
+import { OperatorPane } from "../../demo/browser/operator-pane.ts";
 import { SettingsPane } from "../../demo/browser/settings-pane.ts";
 import { SignInPane } from "../../demo/browser/sign-in-pane.ts";
 import { ask } from "./ask.ts";
@@ -31,6 +34,7 @@ export function wirePanes(hooks: PaneHooks) {
   const signIn = new SignInPane();
   const codes = new CodesPane();
   const settings = new SettingsPane();
+  const operator = new OperatorPane();
   const tellIn = (id: PaneId, told: Told) => paneStatus(id, told.message);
 
   async function showSettings() {
@@ -127,6 +131,34 @@ export function wirePanes(hooks: PaneHooks) {
     codes.show(await flows.codes(rotated));
   }
 
+  async function lookUpMember(event: SubmitEvent) {
+    event.preventDefault();
+    const memberName = String(new FormData(event.target as HTMLFormElement).get("memberName"));
+    operator.clear();
+    const found = await flows.lookUpMember(memberName);
+    if (!settings.isOpen) return;
+    if (found.result === "told") return tellIn("settings", found);
+    operator.lookedUp(found);
+  }
+
+  async function operatorAction(action: OperatorAction) {
+    const member = operator.member;
+    if (!member) return;
+    const { memberName } = member;
+    if (action === "remove") {
+      const removing = await ask({ title: `Remove ${memberName}?`, message: "This can't be undone, and their name will be retired.", confirm: "Remove", danger: true });
+      if (!removing) return;
+    }
+    if (action === "allow-name") {
+      const allowing = await ask({ title: `Let anyone register ${memberName} again?`, message: "The removed member stays removed.", confirm: "Allow the name" });
+      if (!allowing) return;
+    }
+    const acted = await flows.operatorAction(action, member);
+    if (!settings.isOpen) return;
+    if (acted.result === "told") return tellIn("settings", acted);
+    operator.acted(acted);
+  }
+
   async function signedOut() {
     settings.close();
     await hooks.signedOut();
@@ -193,6 +225,11 @@ export function wirePanes(hooks: PaneHooks) {
     await signedOut();
   }));
   $("logout-elsewhere").addEventListener("click", passkeyAction(async () => settled(await flows.logoutElsewhere())));
+  $("operator-form").addEventListener("submit", passkeyAction((event: Event) => lookUpMember(event as SubmitEvent)));
+  $("operator-form").addEventListener("input", () => operator.clear());
+  for (const action of operator.actions()) {
+    action.addEventListener("click", passkeyAction(() => operatorAction(action.value as OperatorAction)));
+  }
 
   return { signIn: signInAction, openRegister };
 }
