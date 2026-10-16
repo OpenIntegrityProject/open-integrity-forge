@@ -223,13 +223,25 @@ test("keep going plays the rest of the tour: a conflict and a redo, a release, a
   await approve(page, "Approve this promotion");
   await expect(story).toContainText("The end", { timeout: 90_000 });
 
-  await story.getByRole("button", { name: "Keep going" }).click();
+  await expect(story.getByRole("button", { name: "Keep going" })).toBeVisible();
+
+  // After a reload, Play the story starts after the furthest step the project has done: here, the whole story.
+  const replay = async () => {
+    await page.reload();
+    await expect(page.locator("#repo-verdict")).toContainText("commits verify", { timeout: 30_000 });
+    await page.getByRole("button", { name: "Play the story" }).click();
+  };
+  await replay();
   await expect(story).toContainText("Keep going: step 1 of 7");
   // Ada's new title, then Bo's, which conflicts with main and is redone on it.
   await approve(page, "Approve this promotion");
   await expect(story).toContainText("it conflicts with main", { timeout: 60_000 });
   await expect(page.locator("#proposals")).toContainText("README.md");
   await approve(page, "Approve this promotion");
+  await expect(story).toContainText("Keep going: step 5 of 7", { timeout: 30_000 });
+  // Part way through the tour, a reload and a replay continue at the release.
+  await replay();
+  await expect(story).toContainText("Keep going: step 5 of 7");
   await approve(page, "Approve this release");
   await expect(page.locator("#history")).toContainText("v1.0.0");
   await approve(page, "Approve the new rules");
