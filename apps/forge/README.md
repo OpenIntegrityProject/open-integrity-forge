@@ -8,7 +8,7 @@ A demo Git forge on Cloudflare Workers and [Artifacts](https://developers.cloudf
 
 The forge determines whether an authorized person intended each specific change. It does so not through a record on the platform, but with a signed object in Git, checked against the signer policy committed in the repository and rooted in its inception commit.
 
-The forge is built on [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare), Blockchain Commons' passkey-only identity library, copied into this repository as `packages/passkey-cloudflare`, and reuses the library demo's sign-in as is. This copy offers ES256 before EdDSA (offered upstream as [BlockchainCommons/passkey-cloudflare#20](https://github.com/BlockchainCommons/passkey-cloudflare/pull/20)), because only a P-256 passkey can make the SSH signature that Git checks.
+The forge is built on [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare), Blockchain Commons' passkey-only identity library, copied into this repository as `packages/passkey-cloudflare`, and reuses the library demo's sign-in as is. The library offers ES256 before EdDSA ([BlockchainCommons/passkey-cloudflare#20](https://github.com/BlockchainCommons/passkey-cloudflare/pull/20)), because only a P-256 passkey can make the SSH signature that Git checks.
 
 ## What it shows
 
