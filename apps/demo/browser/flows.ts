@@ -50,13 +50,14 @@ function notDone(outcome: Cancelled | AlreadyRegistered | Refused, refused: stri
   return outcome.result === "cancelled" ? told(cancelled, true) : told(refused);
 }
 
-/** A fresh set of recovery codes as the codes pane shows them: each as its UR and in words, a header, and the text to keep. */
+/** A form the codes pane shows the codes in: the UR, the secret's BIP39 words, or the UR body in Bytewords. All name the same code. */
+export type CodeForm = "code" | "bip39" | "bytewords";
+
+/** A fresh set of recovery codes as the codes pane shows them: each code in each form, a header, and the text to keep in each form. */
 export interface CodesView {
-  recoveryCodes: string[];
-  recoveryCodeWords: string[];
+  forms: Record<CodeForm, string[]>;
   header: string[];
-  /** The codes as text to keep, always in their UR form: the words are for display only. */
-  text: string;
+  text: Record<CodeForm, string>;
 }
 
 /** The signed-in record's settings. */
@@ -265,14 +266,15 @@ export class Flows {
   // --- codes ----------------------------------------------------------------
 
   /** A fresh set, as the server returns it with when it was issued, as the codes pane shows it to the signed-in member. */
-  async codes({ recoveryCodes, recoveryCodeWords, issuedAt }: IssuedCodes): Promise<CodesView> {
+  async codes({ recoveryCodes, recoveryCodeBip39, recoveryCodeWords, issuedAt }: IssuedCodes): Promise<CodesView> {
     const memberName = (await this.client.me())?.memberName ?? "";
     const about = { site: this.site, memberName, issuedAt };
+    const forms = { code: recoveryCodes, bip39: recoveryCodeBip39, bytewords: recoveryCodeWords };
+    const text = (codes: string[]) => formatRecoveryCodes({ ...about, codes });
     return {
-      recoveryCodes,
-      recoveryCodeWords,
+      forms,
       header: recoveryCodesHeader(about),
-      text: formatRecoveryCodes({ ...about, codes: recoveryCodes }),
+      text: { code: text(forms.code), bip39: text(forms.bip39), bytewords: text(forms.bytewords) },
     };
   }
 }

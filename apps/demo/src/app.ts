@@ -12,7 +12,7 @@ import {
   type RequestContext,
   type RevocationEvent,
 } from "passkey-cloudflare";
-import { seedWords } from "passkey-cloudflare/gordian";
+import { seedBip39, seedWords } from "passkey-cloudflare/gordian";
 import { error, json, type Call, type Handler } from "./http.ts";
 import { operatorLog } from "./operator-log.ts";
 import type { IssuedCodes, Me, PasskeyListing, Recovered, Registered, Revoked, SessionListing } from "./responses.ts";
@@ -39,9 +39,10 @@ export interface AppOptions {
 
 type AuthedHandler = (call: Call, principal: Principal) => Promise<Response>;
 
-/** Fresh recovery codes, when they were issued, and each one's word form, which the page offers for reading aloud. */
-function withWords({ recoveryCodes, issuedAt }: { recoveryCodes: string[]; issuedAt: number }): IssuedCodes {
-  return { recoveryCodes, recoveryCodeWords: recoveryCodes.map(seedWords), issuedAt };
+/** Fresh recovery codes, when they were issued, and each one's word forms, which the page offers for reading aloud or writing down. */
+async function withWords({ recoveryCodes, issuedAt }: { recoveryCodes: string[]; issuedAt: number }): Promise<IssuedCodes> {
+  const recoveryCodeBip39 = await Promise.all(recoveryCodes.map(seedBip39));
+  return { recoveryCodes, recoveryCodeBip39, recoveryCodeWords: recoveryCodes.map(seedWords), issuedAt };
 }
 
 const STATUS: Record<PasskeyErrorCode, number> = {
@@ -79,7 +80,7 @@ function routes(roles: OperatorRolesFor): Routes {
       const outcome = await passkeys.register(ctx, body.response);
       if (!outcome.ok) return outcome.response;
       const { recordId, session, ...codes } = outcome.value;
-      return json({ recordId, ...withWords(codes) } satisfies Registered, {
+      return json({ recordId, ...(await withWords(codes)) } satisfies Registered, {
         headers: { "Set-Cookie": sessionCookie(session) },
       });
     },
@@ -152,7 +153,7 @@ function routes(roles: OperatorRolesFor): Routes {
     },
 
     "/me/recovery-codes/rotate": async ({ passkeys, ctx, request }) =>
-      json(withWords(await passkeys.rotateRecoveryCodes(ctx, sessionValueFrom(request)))),
+      json(await withWords(await passkeys.rotateRecoveryCodes(ctx, sessionValueFrom(request)))),
   };
 
   const GET: Record<string, Handler> = {

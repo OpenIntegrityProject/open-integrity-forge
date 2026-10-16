@@ -1,3 +1,4 @@
+import { decodeBip39, encodeBip39 } from "./bip39.ts";
 import { decodeTypedBytewords, encodeBytewords } from "./bytewords.ts";
 import { encodeBytes, encodeMap, encodeTag, encodeUint } from "./dcbor.ts";
 
@@ -31,6 +32,25 @@ export function seedWords(code: string): string {
   const secret = seedSecretFromTyped(code);
   if (!secret) throw new Error("seedWords: not a recovery code");
   return encodeBytewords(untaggedSeed(secret), "standard");
+}
+
+/**
+ * A recovery code as 12 BIP39 words: its 16-byte secret as BIP39 entropy, the
+ * form most wallets and Gordian Seed Tool show a seed in. Takes the code in
+ * any form `seedSecretFromTyped` accepts.
+ */
+export async function seedBip39(code: string): Promise<string> {
+  const secret = seedSecretFromTyped(code);
+  if (!secret) throw new Error("seedBip39: not a recovery code");
+  return encodeBip39(secret);
+}
+
+/**
+ * The 16-byte secret in what a person typed, or null: any form
+ * `seedSecretFromTyped` accepts, or the secret's 12 BIP39 words.
+ */
+export async function recoverySecretFromTyped(text: string): Promise<Uint8Array | null> {
+  return seedSecretFromTyped(text) ?? decodeBip39(text);
 }
 
 /**

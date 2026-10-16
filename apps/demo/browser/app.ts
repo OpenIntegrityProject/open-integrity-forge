@@ -10,7 +10,7 @@ import type { PublicKeyCredentialHint } from "passkey-cloudflare/browser";
 import type { OperatorAction } from "./demo-client.ts";
 import { CodesPane } from "./codes-pane.ts";
 import { $, input, lendPage, pane, paneStatus, status, type PaneId } from "./dom.ts";
-import { pageFlows, type Told } from "./flows.ts";
+import { pageFlows, type CodeForm, type Told } from "./flows.ts";
 import { OperatorPane } from "./operator-pane.ts";
 import { SettingsPane } from "./settings-pane.ts";
 import { showApp } from "./shell.ts";
@@ -225,7 +225,7 @@ $("recover-form").addEventListener("submit", passkeyAction((event: Event) => rec
 $("rebind-button").addEventListener("click", passkeyAction(rebind));
 input("codes-saved").addEventListener("change", () => codes.savedChanged());
 $("codes-done").addEventListener("click", guard(leaveCodes));
-$("codes-toggle").addEventListener("click", () => codes.toggle());
+$("codes-form").addEventListener("change", (event) => codes.choose((event.target as HTMLInputElement).value as CodeForm));
 $("codes-copy").addEventListener("click", guard(async () => {
   await navigator.clipboard.writeText(codes.text);
   status("Copied your recovery codes.");

@@ -1,19 +1,24 @@
-// The codes pane: a fresh set of recovery codes, shown once, as codes or as
-// words, until the person says they saved them. No requests.
+// The codes pane: a fresh set of recovery codes, shown once, as codes, as
+// BIP39 words or as Bytewords, until the person says they saved them. No
+// requests.
 
 import { $, button, closePane, input, openPane, pane } from "./dom.ts";
-import type { CodesView } from "./flows.ts";
+import type { CodeForm, CodesView } from "./flows.ts";
 
 export class CodesPane {
-  private shown: CodesView = { recoveryCodes: [], recoveryCodeWords: [], header: [], text: "" };
-  private showingWords = false;
+  private shown: CodesView = {
+    forms: { code: [], bip39: [], bytewords: [] },
+    header: [],
+    text: { code: "", bip39: "", bytewords: "" },
+  };
+  private form: CodeForm = "code";
   // The pane stays open until the person says they saved the codes.
   private saved = false;
 
   show(codes: CodesView) {
     this.shown = codes;
     $("codes-header").textContent = codes.header.join("\n");
-    this.list(false);
+    this.choose("code");
     // The codes are shown once, so Continue waits for the person to say they saved them.
     input("codes-saved").checked = false;
     button("codes-done").disabled = true;
@@ -22,14 +27,25 @@ export class CodesPane {
     openPane("codes");
   }
 
-  /** Switch between each code as its UR and the same UR body in words, for reading aloud or writing down. */
-  toggle() {
-    this.list(!this.showingWords);
+  /**
+   * Show each code as its UR, as its secret's 12 BIP39 words, or as the UR
+   * body in Bytewords, for reading aloud or writing down. Each form recovers.
+   */
+  choose(form: CodeForm) {
+    this.form = form;
+    input(`codes-form-${form}`).checked = true;
+    $("code-list").replaceChildren(
+      ...this.shown.forms[form].map((code) => {
+        const li = document.createElement("li");
+        li.textContent = code;
+        return li;
+      }),
+    );
   }
 
-  /** The codes as text to keep, always in their UR form. */
+  /** The codes as text to keep, in the form shown. */
   get text() {
-    return this.shown.text;
+    return this.shown.text[this.form];
   }
 
   savedChanged() {
@@ -49,18 +65,5 @@ export class CodesPane {
    */
   closed() {
     if (!this.saved && !pane("codes").open) pane("codes").showModal();
-  }
-
-  private list(asWords: boolean) {
-    this.showingWords = asWords;
-    const codes = asWords ? this.shown.recoveryCodeWords : this.shown.recoveryCodes;
-    $("code-list").replaceChildren(
-      ...codes.map((code) => {
-        const li = document.createElement("li");
-        li.textContent = code;
-        return li;
-      }),
-    );
-    $("codes-toggle").textContent = asWords ? "Show as codes" : "Show as words";
   }
 }

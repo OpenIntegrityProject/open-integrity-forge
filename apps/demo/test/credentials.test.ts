@@ -1,6 +1,6 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { credentialLabels, type RecordId } from "passkey-cloudflare";
-import { seedWords } from "passkey-cloudflare/gordian";
+import { seedBip39, seedWords } from "passkey-cloudflare/gordian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepared, refusal, testApp, uniqueName } from "./harness.ts";
 import { PINNED_LABEL, PINNED_LABEL_BYTES, pinLabelDraws, savedLabel } from "./label-draws.ts";
@@ -369,6 +369,7 @@ describe("recovery codes", () => {
     expect(rotated.recoveryCodes).toHaveLength(8);
     for (const code of rotated.recoveryCodes) expect(recoveryCodes).not.toContain(code);
     expect(rotated.recoveryCodeWords).toEqual(rotated.recoveryCodes.map(seedWords));
+    expect(rotated.recoveryCodeBip39).toEqual(await Promise.all(rotated.recoveryCodes.map(seedBip39)));
   });
 
   it("say when a rotated set was issued", async () => {
