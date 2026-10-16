@@ -19,15 +19,18 @@ The forge is built on this repository's passkey library and reuses the demo's si
 5. **You promote Ada's change.** Your passkey signs the exact merge commit, both parents, the resulting tree, and the message, as an SSH signature that `git verify-commit` checks.
 6. **Anyone checks it anywhere.** A fresh clone on a laptop, or a mirror on any Git host, gives the same answer, with no forge in the loop.
 
-"Play the story" on the page walks through these steps, and stops where your passkey is needed. If you open a commit, go to another project or switch tabs, the story waits, and shows its place again when you come back. At its end, "Keep going" plays the rest of the tour in the demo video: two agents conflict and the second redoes its change, a release, Bo's key revoked, and the newest approval opened as a Gordian Envelope.
+"Play the story" on the page walks through these steps, and stops where your passkey is needed. If you open a commit, go to another project or switch tabs, the story waits, and shows its place again when you come back. It reads its place from the repository, so after a reload, or on a project made earlier, it starts after the furthest step the project has done. At its end, "Keep going" plays the rest of the tour in the demo video: two agents conflict and the second redoes its change, a release, Bo's key revoked, and the newest approval opened as a Gordian Envelope.
 
 Beyond the story, the page also lets you:
 
 - **Revoke a key** (Rules): a policy change under your approval; the agent stops and its fork token stops working.
 - **Release main** as an annotated tag that carries your approval.
 - **Make two agents conflict** ("retitle the README"), see the second rejected at M, and "Redo on the new main".
-- **Work from your laptop**: admit your own SSH key, get push commands, and push signed work that the forge verifies like an agent's.
+- **Work from your laptop**: admit your own SSH key, get push commands, and push signed work that the forge verifies like an agent's. The forge hears the push through an Artifacts push event, so this needs the `CF_API_TOKEN` secret (Deploy, step 4); the live demo leaves it off, and the page says so.
 - **Ask an agent to write a note with Claude**, when the deployment has an `ANTHROPIC_API_KEY` secret. The model sees the topic and the note names, never a key or a token, and its work is checked like any other.
+- **Delete a project** and its repositories, after a fresh passkey check.
+- **Manage your account** in Settings, from the passkey library: passkeys on this or another device or a security key, recovery codes, sessions ("Log out everywhere"), your record id, and which passkey is your promoter key (replacing it can ask for a fresh passkey check).
+- **Operate the forge**, for the records listed in `OPERATOR_RECORD_IDS`: look up a member and their log, create a one-time rebind link so a member can add a new passkey, suspend, resume, remove, and let a removed name be registered again.
 
 ## The rules
 
@@ -63,7 +66,7 @@ A promoter approves a change of `main` by signing the commit itself: a WebAuthn 
 | `authority/` | The verifier and what it needs: policy, approvals, SSH signatures, Git helpers. It needs no server and runs in Workers, Node and Bun. |
 | `src/` | The Worker: routes (`forge.ts`), the `Project`, `AgentRun`, `Person`, `RepoIndex` and `LocalRepo` Durable Objects, the repo hosts, the push event consumer, the template and the agents' tasks. |
 | `browser/` | The page: stage, history graph, approval and commit sheets, the story, the seal, and the stylesheet. |
-| `scripts/` | `forge-verify.ts`, `smoke.ts`, `subscribe-pushes.ts`, `cleanup-artifacts.ts`, `check-production-bundle.ts`. |
+| `scripts/` | `forge-verify.ts`, `smoke.ts`, `push-check.ts`, `laptop-check.ts`, `subscribe-pushes.ts`, `cleanup-artifacts.ts`, `check-production-bundle.ts`, and `session.ts`, which the checks share. |
 | `wrangler.jsonc`, `wrangler.local.jsonc` | The deployed configuration, with Artifacts, and the local one, without. `scripts/config.test.ts` keeps them in step. |
 
 ## Run it locally
@@ -124,7 +127,7 @@ The verifier reads only the repository, so a mirror on any Git host gives the sa
 2. The deployment is the Cloudflare account that holds gordianstack.com (`account_id` in `apps/forge/wrangler.jsonc`) at `forgedemo.gordianstack.com` (`routes`, `RP_ID`, `ORIGIN`). The account must be on Workers Paid: Artifacts refuses a Free account, and the passkey library needs Paid's CPU time too.
 3. Create the queue for Artifacts push events, once: `npx wrangler queues create forge-artifacts-events`.
 4. Optional secrets: `OPERATOR_RECORD_IDS`; `GITHUB_TOKEN` and a `MIRROR_OWNER` value for the mirror; `CF_API_TOKEN` (Queues edit) so the forge subscribes each new repository to push events itself; `ANTHROPIC_API_KEY` so agents can write notes with Claude. Set each with `npx wrangler secret put <NAME>`.
-5. `npx wrangler deploy` from `apps/forge`. The first project creates the `forge-demo` Artifacts namespace.
+5. `npx wrangler deploy` from `apps/forge`. The first project creates the `forge-demo` Artifacts namespace. Settle the Worker's `name` before this first deploy: deleting a Worker that once held the custom domain can remove the domain's DNS record while the dashboard still shows it attached. If the host stops resolving, check it over DNS-over-HTTPS (a local resolver may cache the failure) and attach the domain again.
 6. Without `CF_API_TOKEN`, subscribe the queue to a project's repositories after it has its agents: `node scripts/subscribe-pushes.ts` (Artifacts sends push events per repository). Check them with `node scripts/push-check.ts https://<host>` and `node scripts/laptop-check.ts https://<host>`.
 7. To deploy on promotion: in the dashboard, connect a project's repository to Workers Builds (Settings > Builds > Connect). New projects carry a `wrangler.jsonc` that serves their notes.
 8. Smoke it: `node scripts/smoke.ts https://<host> --runs 2 --edge`.
