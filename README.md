@@ -22,14 +22,16 @@ Open Integrity Forge runs on [Cloudflare Workers](https://developers.cloudflare.
 
 ## What the demo shows
 
-1. **Your passkey approves the first commit.** Its hash becomes the repository's id, and the rules in it define your passkey as the only promoter.
+1. **Your passkey signs the first commit.** It is an empty inception commit, and its hash becomes the repository's id. The next commit, which your passkey also approves, sets the rules and names your passkey as the only promoter.
 2. **You admit two agents, Ada and Bo.** Each gets an Ed25519 SSH key that lasts an hour and a fork of its own, with a write token for that fork only. Changing the rules needs your approval too.
-3. **The agents work at the same time.** Each signs its commits with its own key and proposes them. Artifacts push events reach a Queue, and the forge checks every proposal against the rules in the repository.
+3. **The agents work at the same time.** Each signs its commits with its own key and proposes them, and the forge checks every proposal against the rules in the repository.
 4. **Bo tries to make its own key a promoter.** The commit is validly signed, but the repository still rejects it: a key can never authorize itself.
 5. **You promote Ada's change.** Your passkey signs the merge commit, and `git verify-commit` checks that signature.
-6. **Anyone can check it anywhere.** A fresh clone, a laptop, or a GitHub mirror will give the same answer.
+6. **Anyone can check it anywhere.** A fresh clone on a laptop, or a mirror on any Git host, gives the same answer.
 
-The demo also lets you revoke an agent's key, release `main` as a tag that carries your approval, make two agents conflict and redo the loser on the new `main`, push signed work from your own laptop, and (where the deployment has an Anthropic API key) ask an agent to write a note with Claude. Every one of these is checked by the same rules.
+"Play the story" stops wherever your passkey is needed and picks up from the furthest step the project has done, even after a reload. At its end, "Keep going" plays the rest of the video's tour: two agents conflict and the second redoes its change, a release, a key revoked, and an approval opened as a Gordian Envelope.
+
+The demo also lets you revoke an agent's key, release `main` as a tag that carries your approval, make two agents conflict and redo the loser on the new `main`, and delete a project. Two features need a deployment setting that the live demo leaves off: pushing signed work from your own laptop needs `CF_API_TOKEN`, so the forge hears the push, and asking an agent to write a note with Claude needs an Anthropic API key. Every change is checked by the same rules. Settings holds your passkeys, recovery codes and sessions, and, for an operator, tools to look up, suspend or help a member recover.
 
 ## The rules
 
