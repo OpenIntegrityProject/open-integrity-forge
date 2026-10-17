@@ -188,7 +188,7 @@ export class ApprovalSheet {
           ? "Your passkey signs this exact commit as an SSH signature, so git verify-commit checks it on any clone, with no forge."
           : request.message !== undefined
             ? "Your passkey signs this exact commit, its message included, as an SSH signature, so git verify-commit checks it on any clone, with no forge."
-            : "Your passkey signs a digest of exactly these facts. The signature goes into the commit, so anyone with a clone can check it without this site.",
+            : "Your passkey signs a digest of exactly these facts. The approval goes into the message of the tag, so anyone with a clone can check it without this site.",
       ),
     ];
   }
