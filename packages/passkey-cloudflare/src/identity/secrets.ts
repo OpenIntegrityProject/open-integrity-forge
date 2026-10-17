@@ -1,5 +1,5 @@
 import { concatBytes, randomBytes, sha256Hex, toBase64Url } from "../encoding.ts";
-import { SEED_LENGTH, seedSecretFromTyped, seedUr } from "../gordian/seed.ts";
+import { recoverySecretFromTyped, SEED_LENGTH, seedUr } from "../gordian/seed.ts";
 
 // Session tokens and recovery codes. Each is minted from the platform's secure
 // generator and handed to the caller once; only its SHA-256 hash is stored.
@@ -52,17 +52,17 @@ export const RECOVERY_CODE_COUNT = 8;
 // A recovery code is a 16-byte secret typed as a seed, `40300({1: secret})`,
 // and shown as the seed's UR, `ur:seed/` + minimal Bytewords (54 characters).
 // Gordian Seed Tool imports that form as a seed. Input also accepts the other
-// Bytewords forms of the same secret, and a whole line of the numbered list
-// `formatRecoveryCodes` makes; whichever form is typed, the hash is of the
-// decoded secret.
+// Bytewords forms of the same secret, its 12 BIP39 words, and a whole line of
+// the numbered list `formatRecoveryCodes` makes; whichever form is typed, the
+// hash is of the decoded secret.
 
 function hashSecret(secret: Uint8Array): Promise<string> {
   return sha256Hex(concatBytes(new TextEncoder().encode("recovery-code:"), secret));
 }
 
 export async function hashRecoveryCode(code: string): Promise<string> {
-  // Bytewords are letters only, so a leading list number is never part of a code.
-  const secret = typeof code === "string" ? seedSecretFromTyped(code.replace(/^\s*\d+\.\s+/, "")) : null;
+  // Bytewords and BIP39 words are letters only, so a leading list number is never part of a code.
+  const secret = typeof code === "string" ? await recoverySecretFromTyped(code.replace(/^\s*\d+\.\s+/, "")) : null;
   // Input that is no code still gets a hash, one no stored code can have, so
   // it is refused where a wrong code is.
   return secret ? hashSecret(secret) : sha256Hex(`not-a-recovery-code:${String(code)}`);

@@ -149,9 +149,16 @@ describe("the demo's flows", () => {
       `Member name: ${name}`,
       expect.stringMatching(/^Issued: /),
     ]);
-    expect(codes.recoveryCodeWords).toHaveLength(codes.recoveryCodes.length);
-    expect(codes.text).toContain(`1. ${codes.recoveryCodes[0]}`);
-    expect(codes.text).not.toContain(codes.recoveryCodeWords[0]);
+    expect(codes.forms.code).toEqual(registered.recoveryCodes);
+    expect(codes.forms.bip39).toEqual(registered.recoveryCodeBip39);
+    expect(codes.forms.bytewords).toEqual(registered.recoveryCodeWords);
+    // The text to keep is in the form shown, and only that form.
+    for (const form of ["code", "bip39", "bytewords"] as const) {
+      expect(codes.text[form]).toContain(`1. ${codes.forms[form][0]}`);
+      for (const other of ["code", "bip39", "bytewords"] as const) {
+        if (other !== form) expect(codes.text[form]).not.toContain(codes.forms[other][0]);
+      }
+    }
   });
 
   it("show the member a lookup found, with what the lookup noted", async () => {

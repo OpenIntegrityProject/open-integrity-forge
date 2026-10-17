@@ -117,6 +117,31 @@ describe("recovery", () => {
     expect(recovered.result).toBe("ok");
   });
 
+  it("accepts a code as the BIP39 words the page shows, and spends it in that form too", async () => {
+    const app = testApp();
+    const name = uniqueName();
+    const { recordId, recoveryCodes, recoveryCodeBip39 } = await app.browser().register(name);
+    expect(recoveryCodeBip39).toHaveLength(recoveryCodes.length);
+    for (const words of recoveryCodeBip39) expect(words).toMatch(/^[a-z]+( [a-z]+){11}$/);
+
+    // A whole numbered line from the text to keep, as it was copied.
+    const recovered = await app.browser().recover(name, `3. ${recoveryCodeBip39[2]!}`);
+
+    expect(recovered).toMatchObject({ result: "ok", recordId });
+    expect(refusal(await app.browser().recover(name, recoveryCodes[2]!)).status).toBe(400);
+  });
+
+  it("refuses BIP39 words whose checksum fails like a wrong code", async () => {
+    const app = testApp();
+    const name = uniqueName();
+    await app.browser().register(name);
+
+    const refused = refusal(await app.browser().recover(name, Array(12).fill("abandon").join(" ")));
+
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toBe('{"error":"ceremony refused"}');
+  });
+
   it("accepts a code read out as words, and spends it in that form too", async () => {
     const app = testApp();
     const name = uniqueName();

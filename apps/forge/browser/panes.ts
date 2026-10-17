@@ -10,7 +10,7 @@ import type { PublicKeyCredentialHint } from "passkey-cloudflare/browser";
 import { CodesPane } from "../../demo/browser/codes-pane.ts";
 import { $, input, openPane, pane, paneStatus, status, type PaneId } from "../../demo/browser/dom.ts";
 import type { OperatorAction } from "../../demo/browser/demo-client.ts";
-import type { Flows, Told } from "../../demo/browser/flows.ts";
+import type { CodeForm, Flows, Told } from "../../demo/browser/flows.ts";
 import { OperatorPane } from "../../demo/browser/operator-pane.ts";
 import { SettingsPane } from "../../demo/browser/settings-pane.ts";
 import { SignInPane } from "../../demo/browser/sign-in-pane.ts";
@@ -204,7 +204,7 @@ export function wirePanes(hooks: PaneHooks) {
     codes.leave();
     if (settings.isOpen) await showSettings();
   }));
-  $("codes-toggle").addEventListener("click", () => codes.toggle());
+  $("codes-form").addEventListener("change", (event) => codes.choose((event.target as HTMLInputElement).value as CodeForm));
   $("codes-copy").addEventListener("click", guard(async () => {
     await copy($<HTMLButtonElement>("codes-copy"), codes.text);
   }));

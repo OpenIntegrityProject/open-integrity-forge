@@ -1,0 +1,42 @@
+{
+  "about": "BIP39 English test vectors for the hand-written BIP39 encoder: every case with 128 bits of entropy (the length of a recovery code) from the Trezor reference vectors, entropy and mnemonic only. origin: published; copied from the cited source, not edited.",
+  "source": "https://github.com/trezor/python-mnemonic/blob/master/vectors.json",
+  "wordlist": {
+    "source": "https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt",
+    "sha256": "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
+  },
+  "cases": [
+    {
+      "entropyHex": "00000000000000000000000000000000",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    },
+    {
+      "entropyHex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+      "mnemonic": "legal winner thank year wave sausage worth useful legal winner thank yellow"
+    },
+    {
+      "entropyHex": "80808080808080808080808080808080",
+      "mnemonic": "letter advice cage absurd amount doctor acoustic avoid letter advice cage above"
+    },
+    {
+      "entropyHex": "ffffffffffffffffffffffffffffffff",
+      "mnemonic": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"
+    },
+    {
+      "entropyHex": "9e885d952ad362caeb4efe34a8e91bd2",
+      "mnemonic": "ozone drill grab fiber curtain grace pudding thank cruise elder eight picnic"
+    },
+    {
+      "entropyHex": "c0ba5a8e914111210f2bd131f3d5e08d",
+      "mnemonic": "scheme spot photo card baby mountain device kick cradle pact join borrow"
+    },
+    {
+      "entropyHex": "23db8160a31d3e0dca3688ed941adbf3",
+      "mnemonic": "cat swing flag economy stadium alone churn speed unique patch report train"
+    },
+    {
+      "entropyHex": "f30f8c1da665478f49b001d94c5fc452",
+      "mnemonic": "vessel ladder alter error federal sibling chat ability sun glass valve picture"
+    }
+  ]
+}

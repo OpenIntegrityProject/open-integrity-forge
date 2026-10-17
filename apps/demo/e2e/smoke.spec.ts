@@ -167,9 +167,9 @@ test("register, log out and log back in with a passkey", async ({ page }) => {
   const headerText = (await page.locator("#codes-header").textContent())!;
   expect(headerText.startsWith(header)).toBe(true);
   expect(headerText.slice(header.length)).toMatch(issued);
-  // Copy takes the codes as text to keep, in their UR form even while the words show.
+  // Copy takes the codes as text to keep, in the form shown: the UR by default.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.getByRole("button", { name: "Show as words" }).click();
+  await expect(page.getByRole("radio", { name: "Code" })).toBeChecked();
   await page.getByRole("button", { name: "Copy" }).click();
   await expect(page.locator("#codes-status")).toHaveText("Copied your recovery codes.");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
@@ -560,12 +560,14 @@ test("recover on a new device with a recovery code, and be prompted to replace t
   const ur = (await firstCode.textContent())!;
   expect(ur).toMatch(/^ur:seed\//);
   // The words are the same code, read aloud or written down; recover with them.
-  await page.getByRole("button", { name: "Show as words" }).click();
+  await page.locator("#codes-form label", { hasText: "Bytewords" }).click();
   await expect(firstCode).toHaveText(/^[a-z]{4}( [a-z]{4}){22}$/);
-  const code = (await firstCode.textContent())!;
-  await page.getByRole("button", { name: "Show as codes" }).click();
+  await page.locator("#codes-form label", { hasText: "Code" }).click();
   await expect(firstCode).toHaveText(ur);
-  await page.getByRole("button", { name: "Show as words" }).click();
+  await page.locator("#codes-form label", { hasText: "BIP39 words" }).click();
+  await expect(page.getByRole("radio", { name: "BIP39 words" })).toBeChecked();
+  await expect(firstCode).toHaveText(/^[a-z]+( [a-z]+){11}$/);
+  const code = (await firstCode.textContent())!;
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
   await page.getByRole("checkbox", { name: "I have saved my recovery codes" }).check();
   await page.getByRole("button", { name: "Continue", exact: true }).click();

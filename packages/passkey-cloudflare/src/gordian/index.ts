@@ -1,4 +1,5 @@
-// Hand-written Gordian encoders: dCBOR, Bytewords and simple Envelopes.
+// Hand-written Gordian encoders: dCBOR, Bytewords and simple Envelopes, and
+// the BIP39 words of a recovery code.
 export { encodeArray, encodeBytes, encodeMap, encodeTag, encodeText, encodeUint } from "./dcbor.ts";
 export {
   BytewordsError,
@@ -22,4 +23,14 @@ export {
   type Envelope,
   type SeedMetadata,
 } from "./envelope.ts";
-export { SEED_LENGTH, seedSecretFromTyped, seedUr, seedWords, taggedSeed, untaggedSeed } from "./seed.ts";
+export { BIP39_WORDS, decodeBip39, encodeBip39 } from "./bip39.ts";
+export {
+  recoverySecretFromTyped,
+  SEED_LENGTH,
+  seedBip39,
+  seedSecretFromTyped,
+  seedUr,
+  seedWords,
+  taggedSeed,
+  untaggedSeed,
+} from "./seed.ts";

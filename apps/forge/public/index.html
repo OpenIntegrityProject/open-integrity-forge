@@ -195,13 +195,18 @@
       <h2 id="codes-title">Your recovery codes</h2>
       <p id="codes-status" role="status" aria-live="polite"></p>
       <p>Store these somewhere safe. Each works once, and they will not be shown again.</p>
+      <fieldset id="codes-form" class="segmented">
+        <legend>Show as</legend>
+        <label><input id="codes-form-code" type="radio" name="codes-form" value="code" checked />Code</label>
+        <label><input id="codes-form-bip39" type="radio" name="codes-form" value="bip39" />BIP39 words</label>
+        <label><input id="codes-form-bytewords" type="radio" name="codes-form" value="bytewords" />Bytewords</label>
+      </fieldset>
       <div class="codes-slip">
         <p id="codes-header"></p>
         <ol id="code-list"></ol>
       </div>
       <div class="button-row">
         <button id="codes-copy" class="copy" type="button">Copy</button>
-        <button id="codes-toggle" type="button">Show as words</button>
       </div>
       <label>
         <input id="codes-saved" type="checkbox" />

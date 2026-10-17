@@ -10,9 +10,12 @@ export interface Me {
   operator: boolean;
 }
 
-/** Fresh recovery codes, each with its word form, and when they were issued. */
+/** Fresh recovery codes, each with its two word forms, and when they were issued. */
 export interface IssuedCodes {
   recoveryCodes: string[];
+  /** Each code's secret as 12 BIP39 words. */
+  recoveryCodeBip39: string[];
+  /** Each code's UR body in standard Bytewords. */
   recoveryCodeWords: string[];
   issuedAt: number;
 }

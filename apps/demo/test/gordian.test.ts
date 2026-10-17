@@ -1,11 +1,14 @@
 import { parseLabel } from "passkey-cloudflare";
 import {
   assertion,
+  BIP39_WORDS,
   BytewordsError,
   bytewordsIdentifier,
   crc32,
+  decodeBip39,
   decodeBytewords,
   encodeArray,
+  encodeBip39,
   encodeBytes,
   encodeBytewords,
   encodeMap,
@@ -15,6 +18,8 @@ import {
   envelopeCbor,
   leaf,
   node,
+  recoverySecretFromTyped,
+  seedBip39,
   seedEnvelope,
   seedSecretFromTyped,
   seedUr,
@@ -24,6 +29,7 @@ import {
   type Envelope,
 } from "passkey-cloudflare/gordian";
 import { describe, expect, it } from "vitest";
+import bip39 from "./fixtures/bip39-test-vectors.json";
 import vectors from "./fixtures/gordian-test-vectors.json";
 
 // The fixture is generated outside this repository by the Blockchain Commons
@@ -184,6 +190,54 @@ describe("recovery code text", () => {
       expect(seedSecretFromTyped(c.input)).toBeNull();
     });
   }
+});
+
+describe("BIP39 words", () => {
+  it("use the published English wordlist", async () => {
+    const file = new TextEncoder().encode(BIP39_WORDS.join("\n") + "\n");
+    expect(BIP39_WORDS).toHaveLength(2048);
+    expect(hex(new Uint8Array(await crypto.subtle.digest("SHA-256", file)))).toBe(bip39.wordlist.sha256);
+  });
+
+  for (const c of bip39.cases) {
+    it(`spell ${c.entropyHex} and read it back`, async () => {
+      expect(await encodeBip39(bytes(c.entropyHex))).toBe(c.mnemonic);
+      expect(hex((await decodeBip39(c.mnemonic)) ?? new Uint8Array())).toBe(c.entropyHex);
+    });
+  }
+
+  it("read any case, any whitespace, and a word's first four letters", async () => {
+    const c = bip39.cases[1]!;
+    const short = c.mnemonic.split(" ").map((w) => w.slice(0, 4)).join(" ");
+    for (const typed of [c.mnemonic.toUpperCase(), `  ${c.mnemonic.replaceAll(" ", "\n\t")} `, short]) {
+      expect(hex((await decodeBip39(typed)) ?? new Uint8Array())).toBe(c.entropyHex);
+    }
+  });
+
+  it("refuse a failed checksum, a wrong count, an unknown word and a three-letter prefix", async () => {
+    const words = bip39.cases[0]!.mnemonic.split(" ");
+    for (const typed of [
+      Array(12).fill("abandon").join(" "),
+      words.slice(0, 11).join(" "),
+      [...words, "about"].join(" "),
+      [...words.slice(0, 11), "zzzz"].join(" "),
+      [...words.slice(0, 11), "abo"].join(" "),
+    ]) {
+      expect(await decodeBip39(typed)).toBeNull();
+    }
+  });
+
+  it("refuse entropy that is not 16 bytes", async () => {
+    await expect(encodeBip39(new Uint8Array(32))).rejects.toThrow();
+  });
+
+  it("spell a recovery code's secret, and name that code", async () => {
+    const ur = vectors.recoveryCode.inputAccepted.find((c) => c.id === "ur")!.input;
+    const words = await seedBip39(ur);
+    expect(words).toBe(await encodeBip39(secret));
+    expect(hex((await recoverySecretFromTyped(words)) ?? new Uint8Array())).toBe(code.secretHex);
+    expect(hex((await recoverySecretFromTyped(ur)) ?? new Uint8Array())).toBe(code.secretHex);
+  });
 });
 
 describe("passkey labels", () => {
