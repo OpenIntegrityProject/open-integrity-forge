@@ -106,10 +106,11 @@ export class ForgeClient {
     return outcome<ApprovalRequest>(await this.request("POST", `/forge/projects/${projectId}/proposals/${proposalId}/prepare`));
   }
 
-  /** Ask the promoter's passkey to approve this exact change, and send the approval. */
-  async approve(request: ApprovalRequest): Promise<Outcome<ProjectState>> {
+  /** Ask the promoter's passkey to approve this exact change, and send the approval. `sending` runs when the passkey has signed, before the forge records it. */
+  async approve(request: ApprovalRequest, sending?: () => void): Promise<Outcome<ProjectState>> {
     const found = await this.approver.approve(request.options as PublicKeyCredentialRequestOptionsJSON);
     if (found.result !== "found") return { result: "cancelled" };
+    sending?.();
     return outcome<ProjectState>(
       await this.request("POST", `/forge/projects/${request.projectId}/approvals/${request.approvalId}`, { response: found.response }),
     );

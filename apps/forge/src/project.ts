@@ -1295,6 +1295,8 @@ export class Project extends DurableObject<Env> {
   async state(): Promise<ProjectState> {
     const project = this.project();
     if (!project) throw new Error("no project");
+    // Read before the rest, so the state holds at least the changes this count names.
+    const version = this.version();
     const host = this.host();
     const agents: AgentState[] = [];
     for (const row of this.agents()) {
@@ -1339,6 +1341,7 @@ export class Project extends DurableObject<Env> {
       .reverse();
     return {
       id: project.id,
+      version,
       name: project.name,
       createdAt: project.createdAt,
       repo: {

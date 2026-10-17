@@ -129,6 +129,8 @@ export interface MirrorState {
 
 export interface ProjectState {
   id: string;
+  /** The project's change count when the state was read. A page keeps the state with the higher count. */
+  version: number;
   name: string;
   createdAt: number;
   repo: { name: string; host: "artifacts" | "local"; remote: string | null };
