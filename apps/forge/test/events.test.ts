@@ -100,6 +100,8 @@ describe("the state routes", () => {
     must(await leo.forge.tempt(id, "bo"));
     const changed = await leo.browser.get(`/forge/projects/${id}`, { "If-None-Match": etag });
     expect(changed.status).toBe(200);
+    // Let Bo's task finish before the test ends, so the runtime does not close while the agent is still working.
+    await waitFor(leo, id, (s) => s.proposals.some((p) => p.agentId === "bo" && p.taskId === "permanent-key" && p.status === "rejected"), "Bo's rogue proposal");
   });
 
   it("stream the state as server-sent events", async () => {

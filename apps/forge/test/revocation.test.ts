@@ -30,5 +30,7 @@ describe("revoking an agent's key", () => {
     expect(await leo.forge.tempt(id, "bo")).toMatchObject({ result: "refused", status: 409, refusal: { error: "revoked" } });
     expect(await leo.forge.prepareRevocation(id, "bo")).toMatchObject({ result: "refused", status: 409 });
     must(await leo.forge.tempt(id, "ada"));
+    // Let Ada's task finish before the test ends, so the runtime does not close while the agent is still working.
+    await waitFor(leo, id, (s) => s.proposals.some((p) => p.agentId === "ada" && p.taskId === "permanent-key" && p.status === "rejected"), "Ada's rogue proposal");
   });
 });
