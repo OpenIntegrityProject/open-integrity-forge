@@ -9,3 +9,4 @@ apps/demo/public/app.js
 apps/forge/public/app.js
 apps/forge/public/forge.css
 apps/forge/public/fonts/
+apps/forge/public/index.html
