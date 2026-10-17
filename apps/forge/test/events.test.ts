@@ -5,6 +5,7 @@ import { commitSigned } from "../authority/make.ts";
 import { fingerprint, generateKey } from "../authority/sshsig.ts";
 import { onPushed, type PushedEvent } from "../src/events.ts";
 import { repoHost } from "../src/repo-host.ts";
+import type { ProjectState } from "../src/state.ts";
 import { must, Person, testForge, uniqueName, waitFor, createProject } from "./harness.ts";
 
 async function withAgents() {
@@ -100,6 +101,13 @@ describe("the state routes", () => {
     must(await leo.forge.tempt(id, "bo"));
     const changed = await leo.browser.get(`/forge/projects/${id}`, { "If-None-Match": etag });
     expect(changed.status).toBe(200);
+    // The state carries the count its ETag names, so a page can tell an older state from a newer one.
+    const before = (await first.json()) as ProjectState;
+    const after = (await changed.json()) as ProjectState;
+    expect(etag).toBe(`W/"${before.version}"`);
+    expect(after.version).toBeGreaterThan(before.version);
+    // Let Bo's task finish before the test ends, so the runtime does not close while the agent is still working.
+    await waitFor(leo, id, (s) => s.proposals.some((p) => p.agentId === "bo" && p.taskId === "permanent-key" && p.status === "rejected"), "Bo's rogue proposal");
   });
 
   it("stream the state as server-sent events", async () => {

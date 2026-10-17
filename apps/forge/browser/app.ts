@@ -143,6 +143,8 @@ function projectIdFromHash(): string | null {
 
 function received(state: ProjectState) {
   if (projectIdFromHash() !== state.id) return;
+  // An approval's answer arrives when the sheet closes, after the stream may have sent newer states. Keep the newer one.
+  if (current?.id === state.id && state.version < current.version) return;
   current = state;
   byId("stage").hidden = false;
   stage.render(state);

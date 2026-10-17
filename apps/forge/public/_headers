@@ -2,3 +2,10 @@
   Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
+
+# The page is always "/" (projects are in the hash). Keep no copy of it, so a
+# visit from history or a restored tab asks for it again after a deploy.
+/
+  Cache-Control: no-store
+/index.html
+  Cache-Control: no-store

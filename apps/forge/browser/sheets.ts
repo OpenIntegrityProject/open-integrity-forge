@@ -132,7 +132,10 @@ export class ApprovalSheet {
       cancel.disabled = true;
       approve.textContent = "Waiting for your passkey…";
       this.dialog.dataset.state = "waiting";
-      const approved = await this.forge.approve(request);
+      // After Touch ID, the forge still writes the change into the repository. Say so, rather than wait on the passkey.
+      const approved = await this.forge.approve(request, () => {
+        approve.textContent = "Signed. Recording it in the repository…";
+      });
       if (approved.result === "ok") return this.signed(request, approved.value);
       if (approved.result === "refused") return this.refused(approved.refusal.reason);
       // The passkey declined. Tell the person, and let them try again.
@@ -188,7 +191,7 @@ export class ApprovalSheet {
           ? "Your passkey signs this exact commit as an SSH signature, so git verify-commit checks it on any clone, with no forge."
           : request.message !== undefined
             ? "Your passkey signs this exact commit, its message included, as an SSH signature, so git verify-commit checks it on any clone, with no forge."
-            : "Your passkey signs a digest of exactly these facts. The signature goes into the commit, so anyone with a clone can check it without this site.",
+            : "Your passkey signs a digest of exactly these facts. The approval goes into the message of the tag, so anyone with a clone can check it without this site.",
       ),
     ];
   }
