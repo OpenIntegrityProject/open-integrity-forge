@@ -25,7 +25,7 @@ describe("a note written with Claude", () => {
     const prompt = JSON.stringify(seen[0]);
     expect(prompt).toContain("key rotation");
     expect(prompt).toContain("independence.md");
-    expect(prompt).not.toMatch(/art_v1_|lrt_v1_|PRIVATE KEY|ssh-ed25519/);
+    expect(prompt).not.toMatch(/art_v[0-9]+_|lrt_v[0-9]+_|PRIVATE KEY|ssh-ed25519/);
   });
 
   it("reports a refusal instead of reading the content", async () => {
