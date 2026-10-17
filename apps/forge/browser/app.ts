@@ -553,6 +553,11 @@ byId("graph").addEventListener("click", (event) => {
   if ((event.target as HTMLElement).closest("[data-action=incept]")) passkeyAction(incept)();
 });
 addEventListener("hashchange", () => route());
+// Safari can bring the page back from its back-forward cache with no request, so the page and its
+// project state may be from before a deploy. Load it again.
+addEventListener("pageshow", (event) => {
+  if (event.persisted) location.reload();
+});
 setInterval(tick, 1000);
 guard(refresh)();
 
