@@ -457,7 +457,14 @@ export class Stage {
           ),
           p.status === "rejected" && report && !report.merge.ok && report.commits.every((c) => c.ok)
             ? p.redoneAt
-              ? h("p", { class: "small muted" }, `${agent?.name ?? "The agent"} is redoing it on the new main.`)
+              ? // The redo is a new proposal for the same task, made after the redo began.
+                h(
+                  "p",
+                  { class: "small muted" },
+                  state.proposals.some((q) => q.id !== p.id && q.agentId === p.agentId && q.taskId === p.taskId && q.createdAt >= p.redoneAt!)
+                    ? `${agent?.name ?? "The agent"} redid it on the new main.`
+                    : `${agent?.name ?? "The agent"} is redoing it on the new main.`,
+                )
               : h("button", { type: "button", "data-key": `redo-${p.id}`, onclick: () => this.actions.redo(p.id) }, "Redo on the new main")
             : p.status === "ready" || p.status === "stale"
             ? h("button", { class: "primary seal-button", type: "button", "data-key": `promote-${p.id}`, "data-passkey": "on", disabled: this.busy(), onclick: () => this.actions.promote(p.id) }, "Promote with passkey")
