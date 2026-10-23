@@ -3,7 +3,8 @@
 // check mark in place of its copy icon for the same time. A hidden live region
 // tells a screen reader the same. The stage draws its buttons again for each
 // new state. Thus a new button for text that the person copied a short time
-// ago also shows "Copied".
+// ago also shows "Copied". An open modal dialog hides the rest of the page from
+// a screen reader, so each dialog has a live region of its own.
 
 import { byId, h, svg } from "./h.ts";
 
@@ -11,6 +12,19 @@ const SHOWN_MS = 1600;
 
 /** The time at which the "Copied" label ends, for each copied text. */
 const recent = new Map<string, number>();
+
+/** Forget the copies whose "Copied" label has ended, so the map holds only recent ones. */
+function forgetEnded(now: number) {
+  for (const [text, until] of recent) if (until <= now) recent.delete(text);
+}
+
+/** A hidden live region in each dialog, made once, before any copy, so that its first announcement is heard. */
+for (const dialog of document.querySelectorAll("dialog")) dialog.append(h("p", { class: "copy-live visually-hidden", "aria-live": "polite" }));
+
+/** The live region that a screen reader hears for `button`: its dialog's, or the page's. */
+function liveRegion(button: HTMLButtonElement): HTMLElement {
+  return button.closest("dialog")?.querySelector<HTMLElement>(":scope > .copy-live") ?? byId("copy-live");
+}
 
 /** The copy icon: two sheets, one on top of the other. */
 const copyIcon = () =>
@@ -45,9 +59,10 @@ function showCopied(button: HTMLButtonElement, ms: number) {
 /** Copy `text`, and show "Copied" on `button`. */
 export async function copy(button: HTMLButtonElement, text: string) {
   await navigator.clipboard.writeText(text);
+  forgetEnded(Date.now());
   recent.set(text, Date.now() + SHOWN_MS);
   showCopied(button, SHOWN_MS);
-  const live = byId("copy-live");
+  const live = liveRegion(button);
   live.textContent = "";
   live.textContent = "Copied.";
 }

@@ -333,13 +333,13 @@ export class Story {
     if (ended && !this.acting) this.showMe();
   }
 
-  /** Wait while the story holds. Throw when the story stops. */
+  /** Wait while the story holds. Throw when the story stops. After one check here, the watcher examines the hold. */
   private async held(signal: AbortSignal) {
-    for (;;) {
-      signal.throwIfAborted();
-      this.check();
-      if (this.hold === null) return;
+    signal.throwIfAborted();
+    this.check();
+    while (this.hold !== null) {
       await sleep(POLL_MS);
+      signal.throwIfAborted();
     }
   }
 

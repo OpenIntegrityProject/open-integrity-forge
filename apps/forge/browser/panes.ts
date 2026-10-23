@@ -189,7 +189,6 @@ export function wirePanes(hooks: PaneHooks) {
   }
   pane("codes").addEventListener("cancel", (event) => event.preventDefault());
   pane("codes").addEventListener("close", () => codes.closed());
-  pane("sign-in").addEventListener("close", () => flows.stopAutofill());
   $("continue").addEventListener("click", signInAction);
   for (const toggle of document.querySelectorAll<HTMLButtonElement>(".info-toggle")) {
     const info = $(toggle.getAttribute("aria-controls")!);

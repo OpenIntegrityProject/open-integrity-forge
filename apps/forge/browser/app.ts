@@ -299,7 +299,6 @@ async function refresh() {
   showApp(me ? { recordId: me.recordId, memberName: me.memberName, operator: false } : null);
   // Signed in, the signed-out actions are hidden and use no space in the app bar. Thus the account button stays at its right edge.
   byId("signed-out-actions").hidden = me !== null;
-  byId("open-register").hidden = me !== null;
   promoterBadge();
   route();
 }
