@@ -70,7 +70,7 @@ export function wirePanes(hooks: PaneHooks) {
       return;
     }
     if (loggedIn.result === "no-passkey") {
-      openAs("sign-in", "No passkey was used. If you have a passkey for this site, try again. If you lost yours, recover with a recovery code.");
+      openAs("sign-in", "No passkey was used. To use a passkey from a password manager, a phone or a security key, continue again. If you lost yours, recover with a recovery code.");
       return;
     }
     openAs("sign-in", "Try again with another passkey, or recover with a recovery code.");

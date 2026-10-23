@@ -6,7 +6,8 @@ const DEVICE_BOUND_NOTICE =
   "Each of your passkeys is held on one device and can't be copied to another. " +
   "If you lose that device, only a recovery code gets you back in. " +
   "Add a passkey on another device or a security key, and keep your recovery codes somewhere safe.";
-const NO_PASSKEY_USED = "No passkey was used. If you do not have a passkey here yet, register; if you lost yours, recover.";
+const NO_PASSKEY_USED =
+  "No passkey was used. To use a passkey from a password manager, a phone or a security key, continue again. If you do not have a passkey here yet, register; if you lost yours, recover.";
 
 /**
  * Give the page a virtual authenticator; returns what reaches it over CDP.
@@ -133,6 +134,32 @@ test("with immediate mode, the sign-in pane opens on Continue with the choices h
   await expect(page.locator("#choices")).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(page.locator("#sign-in")).toBeHidden();
+});
+
+test("with immediate mode, Continue asks through the browser's sheet once it has used no passkey", async ({ page }) => {
+  // Chrome's immediate request sees only the passkeys Chrome holds; one in another
+  // password manager is found only through the sheet.
+  await page.addInitScript(() => {
+    const asked: string[] = [];
+    (window as unknown as { asked: string[] }).asked = asked;
+    PublicKeyCredential.getClientCapabilities = async () => ({ immediateGet: true, conditionalGet: true });
+    navigator.credentials.get = async (options) => {
+      const spelled = options as { mediation?: string; uiMode?: string };
+      if (spelled.mediation === "conditional") return new Promise(() => {});
+      asked.push(spelled.mediation === "immediate" || spelled.uiMode === "immediate" ? "immediate" : "sheet");
+      throw new DOMException("No passkey.", "NotAllowedError");
+    };
+  });
+  await page.goto("/");
+  await openSignIn(page);
+
+  await page.getByRole("button", { name: "Continue with passkey" }).click();
+  await expect(page.getByText(NO_PASSKEY_USED)).toBeVisible();
+  await page.getByRole("button", { name: "Continue with passkey" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { asked: string[] }).asked)).toEqual([
+    "immediate",
+    "sheet",
+  ]);
 });
 
 test("register, log out and log back in with a passkey", async ({ page }) => {
