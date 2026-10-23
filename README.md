@@ -89,10 +89,7 @@ Open http://localhost:8787, register with a passkey and create a project. Browse
 ## What this does not do yet
 
 - **Open Integrity's own verifier does not yet pass a forge repository.** The forge keeps its rules in `policy.json` and generates `allowed_commit_signers` from it, but not `allowed_main_signers` or `allowed_tag_signers`; writing those from the policy is the next step.
-- **The page trusts the forge for the challenge.** The passkey signs the challenge the forge sends; the page does not yet rebuild the commit and check it against the change it shows.
-- **User verification is not enforced for passkey signatures in Git.** OpenSSH's `allowed_signers` has no `verify-required` option, so a passkey signature without user verification would be accepted like one with it.
 - **A release approval binds the repository, ref, commit and tree, not the tag message.** A commit of `main` is signed as a whole, message and author included.
-- **Signer times can be backdated.** Key windows and revocation are judged by the committer time, which the signer writes; short windows limit this, and a trusted timestamp would close it.
 - **One promoter per project.** The policy and the verifier accept several, as well as releases that need more than one approval; the page collects one approval per change.
 - **The agents are scripted**, so the demo runs the same way each time, apart from the optional note written with Claude. A signature proves which key signed, not which model produced the change.
 
