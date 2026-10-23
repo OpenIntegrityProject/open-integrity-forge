@@ -162,7 +162,9 @@ class LocalHost implements RepoHost {
     await this.stub(name).revokeToken(secret);
   }
 
+  /** Throws for a repository that is gone, as Artifacts does. */
   async remote(name: string): Promise<string> {
+    if (!(await this.stub(name).exists())) throw new Error(`there is no repository ${name}`);
     return `${this.origin}/forge/git/${name}.git`;
   }
 

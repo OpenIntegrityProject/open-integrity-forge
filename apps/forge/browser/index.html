@@ -305,6 +305,13 @@
           <button class="danger" type="button" value="remove" disabled>Remove</button>
         </div>
         <p id="operator-result"></p>
+        <h4>Projects</h4>
+        <p class="small muted">Every project on this forge, whoever owns it. Delete removes its repositories, forks, agents and records, and is logged.</p>
+        <button id="operator-projects-load" type="button">List projects</button>
+        <table id="operator-projects" hidden>
+          <thead><tr><th>Project</th><th>Owner</th><th>Created</th><th>Repository</th><th></th></tr></thead>
+          <tbody id="operator-project-rows"></tbody>
+        </table>
       </section>
     </dialog>
   </body>

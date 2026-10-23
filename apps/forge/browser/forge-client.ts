@@ -4,7 +4,7 @@
 
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from "passkey-cloudflare/browser";
 import type { DemoClient, Target } from "../../demo/browser/demo-client.ts";
-import type { ApprovalRequest, CommitDetail, FreshVerify, MirrorState, PushAccess, Outside, ProjectListing, ProjectState, PromoterKey, Refusal } from "../src/state.ts";
+import type { ApprovalRequest, CommitDetail, FreshVerify, MirrorState, OperatorProject, PushAccess, Outside, ProjectListing, ProjectState, PromoterKey, Refusal } from "../src/state.ts";
 
 export interface ForgeMe {
   recordId: string;
@@ -154,5 +154,15 @@ export class ForgeClient {
 
   reset(projectId: string): Promise<Outcome<{ ok: true }>> {
     return this.gated<{ ok: true }>(`/forge/projects/${projectId}/reset`);
+  }
+
+  /** Every project on the forge, for an operator. */
+  async operatorProjects(): Promise<Outcome<{ projects: OperatorProject[] }>> {
+    return outcome<{ projects: OperatorProject[] }>(await this.request("GET", "/forge/operator/projects"));
+  }
+
+  /** Delete any project, as an operator. */
+  operatorReset(projectId: string): Promise<Outcome<{ ok: true }>> {
+    return this.gated<{ ok: true }>(`/forge/operator/projects/${projectId}/reset`);
   }
 }

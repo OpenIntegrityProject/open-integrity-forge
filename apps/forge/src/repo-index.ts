@@ -29,6 +29,14 @@ export class RepoIndex extends DurableObject {
     return row ? { projectId: row.project_id, agentId: row.agent_id } : null;
   }
 
+  /** Every project with a repository here, oldest name first; forks are left out. */
+  projects(): { name: string; projectId: string }[] {
+    return this.sql
+      .exec<{ name: string; project_id: string }>("SELECT name, project_id FROM repos WHERE agent_id IS NULL ORDER BY name")
+      .toArray()
+      .map((r) => ({ name: r.name, projectId: r.project_id }));
+  }
+
   removeProject(projectId: string): void {
     this.sql.exec("DELETE FROM repos WHERE project_id = ?", projectId);
   }

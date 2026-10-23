@@ -584,6 +584,10 @@ main {
 .project-list {
   padding-left: 1.2rem;
 }
+button.link-danger {
+  color: var(--danger);
+  margin-inline-start: 0.75rem;
+}
 
 /* --- The stage ------------------------------------------------------------------------------- */
 .story {
@@ -1230,6 +1234,10 @@ button.copy-icon svg {
 }
 .repo-store {
   margin-inline-start: auto;
+}
+.repo-missing {
+  flex-basis: 100%;
+  color: var(--danger);
 }
 .did-born {
   margin-top: 1rem;

@@ -28,9 +28,9 @@ Beyond the story, the page also lets you:
 - **Make two agents conflict** ("retitle the README"), see the second rejected at M, and "Redo on the new main".
 - **Work from your laptop**: admit your own SSH key, get push commands, and push signed work that the forge verifies like an agent's. The forge hears the push through an Artifacts push event, so this needs the `CF_API_TOKEN` secret (Deploy, step 4); the live demo leaves it off, and the page says so.
 - **Ask an agent to write a note with Claude**, when the deployment has an `ANTHROPIC_API_KEY` secret. The model sees the topic and the note names, never a key or a token, and its work is checked like any other.
-- **Delete a project** and its repositories, after a fresh passkey check.
+- **Delete a project** and its repositories, after a fresh passkey check, from the project or from the list of your projects, even when its repository is already gone from the host.
 - **Manage your account** in Settings, from the passkey library: passkeys on this or another device or a security key, recovery codes, sessions ("Log out everywhere"), your record id, and which passkey is your promoter key (replacing it can ask for a fresh passkey check).
-- **Operate the forge**, for the records listed in `OPERATOR_RECORD_IDS`: look up a member and their log, create a one-time rebind link so a member can add a new passkey, suspend, resume, remove, and let a removed name be registered again.
+- **Operate the forge**, for the records listed in `OPERATOR_RECORD_IDS`: look up a member and their log, create a one-time rebind link so a member can add a new passkey, suspend, resume, remove, and let a removed name be registered again; and list every project on the forge with its owner, and delete any of them, each deletion logged.
 
 ## The rules
 

@@ -21,7 +21,7 @@ import { seal } from "./seal.ts";
 import { ApprovalSheet, CommitSheet } from "./sheets.ts";
 import { Stage, tick } from "./stage.ts";
 import { Story } from "./story.ts";
-import type { ProjectState } from "./view-types.ts";
+import type { OperatorProject, ProjectState } from "./view-types.ts";
 
 const passkeys = new ForgePasskeys(lend);
 const target = { origin: location.origin, fetch: (request: Request) => fetch(request) };
@@ -201,7 +201,24 @@ function startView() {
     ...(projects.length
       ? [
           h("h2", null, "Your projects"),
-          h("ul", { class: "project-list" }, projects.map((p) => h("li", null, h("a", { href: `#/p/${p.id}` }, p.name), h("span", { class: "muted small" }, ` created ${new Date(p.createdAt).toLocaleString()}`)))),
+          h(
+            "ul",
+            { class: "project-list" },
+            projects.map((p) =>
+              h(
+                "li",
+                null,
+                h("a", { href: `#/p/${p.id}` }, p.name),
+                h("span", { class: "muted small" }, ` created ${new Date(p.createdAt).toLocaleString()}`),
+                // A project whose page cannot load, such as one whose repository is gone, can still be deleted from here.
+                h(
+                  "button",
+                  { class: "link link-danger", type: "button", "data-passkey": "on", "aria-label": `Delete ${p.name}`, onclick: passkeyAction(() => deleteProject(p.id, p.name)) },
+                  "Delete",
+                ),
+              ),
+            ),
+          ),
         ]
       : []),
   );
@@ -260,6 +277,65 @@ async function refresh() {
 }
 
 // --- actions ------------------------------------------------------------------------
+
+/** Delete one of the person's projects, after the confirm sheet. The forge asks for a step-up. */
+async function deleteProject(id: string, name: string) {
+  const deleting = await ask({
+    title: `Delete ${name}?`,
+    message: "Its repositories, its forks and its agents go too. This cannot be undone.",
+    confirm: "Delete the project",
+    danger: true,
+  });
+  if (!deleting) return;
+  const done = await forge.reset(id);
+  if (done.result !== "ok") return say(reason(done));
+  if (current?.id === id || projectIdFromHash() === id) {
+    story.stop();
+    location.hash = "";
+  }
+  say("The project is deleted.");
+  await refresh();
+}
+
+/** The operator's list of every project, in settings, each with a Delete button. */
+async function operatorProjects() {
+  const listed = await forge.operatorProjects();
+  if (listed.result !== "ok") return say(reason(listed));
+  byId("operator-projects").hidden = false;
+  const projects = listed.value.projects;
+  fill(
+    byId("operator-project-rows"),
+    projects.length
+      ? projects.map((p) =>
+          h(
+            "tr",
+            null,
+            h("td", null, p.name, h("span", { class: "muted small" }, ` ${p.repoName}`)),
+            h("td", null, p.ownerName ?? "no member name"),
+            h("td", { class: "small" }, new Date(p.createdAt).toLocaleString()),
+            h("td", { class: "small" }, p.missing ? "gone" : "present"),
+            h("td", null, h("button", { class: "danger", type: "button", "data-passkey": "on", onclick: passkeyAction(() => operatorDelete(p)) }, "Delete")),
+          ),
+        )
+      : h("tr", null, h("td", { colspan: 5, class: "muted" }, "No projects.")),
+  );
+}
+
+/** Delete any project as the operator, after the confirm sheet. The forge asks for a step-up and logs it. */
+async function operatorDelete(p: OperatorProject) {
+  const deleting = await ask({
+    title: `Delete ${p.name} of ${p.ownerName ?? "a member with no name"}?`,
+    message: "Its repositories, its forks, its agents and its records go. This cannot be undone, and it is logged.",
+    confirm: "Delete the project",
+    danger: true,
+  });
+  if (!deleting) return;
+  const done = await forge.operatorReset(p.id);
+  if (done.result !== "ok") return say(reason(done));
+  say(`${p.name} is deleted.`);
+  await operatorProjects();
+  await refresh();
+}
 
 /** After the page makes a passkey, make it the promoter key if there is no promoter key. With `replace`, always do it. */
 async function passkeyMade(replace = false) {
@@ -532,22 +608,10 @@ byId("start-story").addEventListener("click", playStory);
 byId("reset").addEventListener(
   "click",
   passkeyAction(async () => {
-    if (!current) return;
-    const deleting = await ask({
-      title: `Delete ${current.name}?`,
-      message: "Its repositories, its forks and its agents go too. This cannot be undone.",
-      confirm: "Delete the project",
-      danger: true,
-    });
-    if (!deleting || !current) return;
-    const done = await forge.reset(current.id);
-    if (done.result !== "ok") return say(reason(done));
-    story.stop();
-    say("The project is deleted.");
-    location.hash = "";
-    await refresh();
+    if (current) await deleteProject(current.id, current.name);
   }),
 );
+byId("operator-projects-load").addEventListener("click", guard(operatorProjects));
 // A project without its inception commit or its first policy shows an approval button in the history band.
 byId("graph").addEventListener("click", (event) => {
   if ((event.target as HTMLElement).closest("[data-action=incept]")) passkeyAction(incept)();
