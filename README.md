@@ -16,6 +16,8 @@ Open Integrity Forge runs on [Cloudflare Workers](https://developers.cloudflare.
 
 **Live demo:** [https://forgedemo.gordianstack.com](https://forgedemo.gordianstack.com) (sign in with a passkey, then "Play the story")
 
+**Status:** The forge is in maintenance mode. The live demo stays up and keeps receiving security fixes and library updates, but no new features are planned. Projects on the live demo are for trying it out and may be deleted after a while; keep a clone of anything you want to keep. The next steps it would take are listed under [What this does not do yet](#what-this-does-not-do-yet).
+
 **Video:** [Open Integrity Forge](https://www.youtube.com/watch?v=_KdOGtynXig), a seven-minute walkthrough of the demo
 
 [![The commit graph from the video: a repository addressed as did:repo, its passkey-signed main, and the forks of two agents, Ada and Bo](docs/forge-demo-video.jpg)](https://www.youtube.com/watch?v=_KdOGtynXig)
@@ -94,7 +96,23 @@ Open http://localhost:8787, register with a passkey and create a project. Browse
 - **One promoter per project.** The policy and the verifier accept several, as well as releases that need more than one approval; the page collects one approval per change.
 - **The agents are scripted**, so the demo runs the same way each time, apart from the optional note written with Claude. A signature proves which key signed, not which model produced the change.
 
-See [SECURITY.md](SECURITY.md) for what an approval signs, the standards beneath it, and these limits with what would close each.
+## Security in brief
+
+**What an approval proves.** Each commit of `main` carries a WebAuthn assertion as its SSH signature. Anyone can check it from a clone, with `forge-verify` or stock Git, and without the forge. It proves four things:
+
+* A passkey scoped to this forge's domain made the signature. OpenSSH checks the domain's hash in the signed authenticator data.
+* The signature covers the whole commit: its parents, tree, author and message. The `Forge-Approval` trailer names the repository and ref, so an approval cannot be moved elsewhere.
+* `forge-verify` also requires that the authenticator verified the person with a PIN or biometric. Stock Git cannot require it.
+* The passkey is one the repository's own signer policy lists. Each change to that policy was approved by a promoter, back to the inception commit, whose passkey the first policy names.
+
+**What it does not prove.**
+
+* **Who the person is.** Nothing ties a passkey to a natural person or to another key they hold.
+* **What made the key.** Registration asks for no attestation. A passkey may be synced, and is then as safe as the account it syncs through.
+* **That the passkey signed what the page showed.** The forge chooses what the passkey signs and serves the page that shows it. An authenticator shows no content.
+* **When the commit was made.** The signer writes the time.
+
+[SECURITY.md](SECURITY.md) covers each of these limits and what would close it. The passkeys come from [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare). Its [security model](https://github.com/BlockchainCommons/passkey-cloudflare/blob/main/docs/security-model.md) explains the bindings a passkey can and cannot prove, and lists unexplored ways to prove more. Among them are binding a promoter's passkey to another key they hold, signed enrolment and operator actions, and keys derived from a passkey.
 
 ## Credits
 
