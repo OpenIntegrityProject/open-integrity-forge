@@ -174,6 +174,12 @@ function assertionShape(value: unknown): value is { id: string; response: { auth
   );
 }
 
+/** What a reset leaves for `alarm` to remove at the repository host. */
+interface Leftovers {
+  repos: string[];
+  subscriptions: string[];
+}
+
 export class Project extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private queue: Promise<unknown> = Promise.resolve();
@@ -198,6 +204,7 @@ export class Project extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS version (id INTEGER PRIMARY KEY CHECK (id = 0), n INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS leftovers (id INTEGER PRIMARY KEY CHECK (id = 0), data TEXT NOT NULL);
     `);
     // Projects made before these columns existed get them here.
     const columns = this.sql.exec<{ name: string }>("PRAGMA table_info(proposals)").toArray().map((c) => c.name);
@@ -1383,20 +1390,47 @@ export class Project extends DurableObject<Env> {
     };
   }
 
-  /** Delete the repositories, the agents and every record of this project. */
+  /**
+   * Delete the agents and every record of this project. The project is gone
+   * when this returns. Its repositories and push subscriptions go after, in
+   * `alarm`, because the first call to the repository host after a quiet time
+   * can take many seconds.
+   */
   async reset(): Promise<void> {
     const project = this.project();
     if (!project) return;
-    const host = this.host();
-    for (const agent of this.agents()) {
-      await host.remove(agent.fork).catch(() => {});
-      await this.run(agent.id).destroy();
-    }
-    if (project.repoId) await host.remove(project.repoName).catch(() => {});
+    const agents = this.agents();
+    const leftovers: Leftovers = {
+      repos: [...agents.map((a) => a.fork), ...(project.repoId ? [project.repoName] : [])],
+      subscriptions: this.cached<string[]>("subscriptions") ?? [],
+    };
+    await Promise.all(agents.map((agent) => this.run(agent.id).destroy()));
     await repoIndex(this.env).removeProject(project.id);
-    for (const id of this.cached<string[]>("subscriptions") ?? []) await unsubscribe(this.env, id);
     await this.ctx.storage.deleteAll();
     this.schema();
+    this.sql.exec("INSERT INTO leftovers (id, data) VALUES (0, ?)", JSON.stringify(leftovers));
+    await this.ctx.storage.setAlarm(Date.now());
+  }
+
+  /**
+   * Remove what a reset left: the repositories and the push subscriptions. A
+   * repository that is gone already counts as removed. If a removal fails, the
+   * alarm keeps it and throws, so the runtime runs the alarm again later.
+   */
+  async alarm(): Promise<void> {
+    const row = this.sql.exec<{ data: string }>("SELECT data FROM leftovers").toArray()[0];
+    if (!row) return;
+    const left = JSON.parse(row.data) as Leftovers;
+    const failed: Leftovers = { repos: [], subscriptions: [] };
+    const host = this.host();
+    for (const name of left.repos) await host.remove(name).catch(() => failed.repos.push(name));
+    for (const id of left.subscriptions) await unsubscribe(this.env, id).catch(() => failed.subscriptions.push(id));
+    if (failed.repos.length === 0 && failed.subscriptions.length === 0) {
+      this.sql.exec("DELETE FROM leftovers");
+      return;
+    }
+    this.sql.exec("UPDATE leftovers SET data = ? WHERE id = 0", JSON.stringify(failed));
+    throw new Error(`could not remove ${[...failed.repos, ...failed.subscriptions].join(", ")}`);
   }
 }
 

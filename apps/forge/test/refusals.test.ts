@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, runDurableObjectAlarm } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { must, Person, testForge, uniqueName, waitFor, createProject } from "./harness.ts";
 
@@ -103,6 +103,8 @@ describe("the forge refuses", () => {
     expect((await leo.forge.state(id)).result).toBe("ok");
     must(await leo.forge.reset(id));
     expect(await leo.forge.state(id)).toMatchObject({ result: "refused", status: 404 });
+    // The repository goes in the project's alarm, after the reset answers.
+    await runDurableObjectAlarm(env.PROJECTS.get(env.PROJECTS.idFromName(id)));
     const repo = env.LOCAL_REPOS.get(env.LOCAL_REPOS.idFromName(state.repo.name));
     expect(await repo.exists()).toBe(false);
     void app;

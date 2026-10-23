@@ -1786,6 +1786,40 @@ dialog[data-state="waiting"] .seal-button {
   flex-wrap: wrap;
 }
 
+/* --- Working ----------------------------------------------------------------------------------
+   While a request runs, the cursor and a bar at the top of the page say so. The bar shows only
+   after a short delay, so that a fast request does not make it flicker. */
+body[data-working] {
+  cursor: progress;
+}
+body[data-working]::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: 30;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat;
+  opacity: 0;
+  animation: working-in 0s 0.3s forwards, working 1.4s 0.3s linear infinite;
+}
+@keyframes working-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes working {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+.stage-loading {
+  padding: 3rem 0;
+  text-align: center;
+}
+
 /* --- Toast ------------------------------------------------------------------------------------ */
 .toast {
   position: fixed;
@@ -1855,5 +1889,10 @@ dialog[data-state="waiting"] .seal-button {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+  /* With no motion, the working bar is a still bar. */
+  body[data-working]::before {
+    opacity: 1;
+    background-size: 100% 100%;
   }
 }

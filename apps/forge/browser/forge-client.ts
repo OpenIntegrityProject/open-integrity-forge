@@ -14,6 +14,12 @@ export interface ForgeMe {
   repoHost: string;
 }
 
+/** The steps of a request that needs a fresh step-up, for a page that shows them: the passkey, then the request. */
+export type GatedStep = "passkey" | "sending";
+
+/** The forge's step-up window is 10 minutes. The page counts a shorter one, for clock skew. */
+const STEP_UP_FRESH_MS = 9 * 60_000;
+
 export type Outcome<T> = { result: "ok"; value: T } | { result: "refused"; status: number; refusal: Refusal } | { result: "cancelled" };
 
 /** How the client asks the promoter's passkey for an approval. */
@@ -53,13 +59,31 @@ export class ForgeClient {
     );
   }
 
-  /** Send a POST request. If the route requires a step-up, do the step-up once and send the request again. */
-  private async gated<T>(path: string, body?: unknown): Promise<Outcome<T>> {
+  /** Until when the session's step-up is fresh, as far as this page knows: it counts only the step-ups that it did. */
+  private steppedUpUntil = 0;
+
+  private async stepUp(step?: (s: GatedStep) => void): Promise<boolean> {
+    step?.("passkey");
+    const steppedUp = await this.demo.stepUp();
+    if (steppedUp.result !== "ok") return false;
+    this.steppedUpUntil = Date.now() + STEP_UP_FRESH_MS;
+    return true;
+  }
+
+  /**
+   * Send a POST request to a route that can require a fresh step-up. If the
+   * forge asks for one, do it once and send the request again. With `always`,
+   * for a route that requires one each time, do the step-up first when this
+   * page did none lately, rather than wait for the refusal.
+   */
+  private async gated<T>(path: string, body?: unknown, step?: (s: GatedStep) => void, always = true): Promise<Outcome<T>> {
+    if (always && Date.now() >= this.steppedUpUntil && !(await this.stepUp(step))) return { result: "cancelled" };
+    step?.("sending");
     let response = await this.request("POST", path, body);
     const refused = (await response.clone().json().catch(() => ({}))) as { error?: string };
     if (response.status === 403 && refused.error === "step-up-required") {
-      const steppedUp = await this.demo.stepUp();
-      if (steppedUp.result !== "ok") return { result: "cancelled" };
+      if (!(await this.stepUp(step))) return { result: "cancelled" };
+      step?.("sending");
       response = await this.request("POST", path, body);
     }
     return outcome<T>(response);
@@ -74,8 +98,9 @@ export class ForgeClient {
   }
 
   /** Make the passkey of this registration response the promoter key. */
-  setPromoterKey(response: unknown): Promise<Outcome<PromoterKey>> {
-    return this.gated<PromoterKey>("/forge/me/promoter-key", { response });
+  setPromoterKey(response: unknown, step?: (s: GatedStep) => void): Promise<Outcome<PromoterKey>> {
+    // Only a key that replaces another key needs a step-up, so the first key asks for none.
+    return this.gated<PromoterKey>("/forge/me/promoter-key", { response }, step, false);
   }
 
   async state(projectId: string): Promise<Outcome<ProjectState>> {
@@ -128,8 +153,8 @@ export class ForgeClient {
     return outcome<ApprovalRequest>(await this.request("POST", `/forge/projects/${projectId}/people/prepare`, { publicKey }));
   }
 
-  pushAccess(projectId: string, personId: string): Promise<Outcome<PushAccess>> {
-    return this.gated<PushAccess>(`/forge/projects/${projectId}/people/${personId}/push-access`);
+  pushAccess(projectId: string, personId: string, step?: (s: GatedStep) => void): Promise<Outcome<PushAccess>> {
+    return this.gated<PushAccess>(`/forge/projects/${projectId}/people/${personId}/push-access`, undefined, step);
   }
 
   async give(projectId: string, agentId: string, task: string, topic?: string): Promise<Outcome<null>> {
@@ -148,12 +173,12 @@ export class ForgeClient {
     return outcome<Outside>(await this.request("POST", `/forge/projects/${projectId}/outside`));
   }
 
-  mirror(projectId: string): Promise<Outcome<MirrorState>> {
-    return this.gated<MirrorState>(`/forge/projects/${projectId}/mirror`);
+  mirror(projectId: string, step?: (s: GatedStep) => void): Promise<Outcome<MirrorState>> {
+    return this.gated<MirrorState>(`/forge/projects/${projectId}/mirror`, undefined, step);
   }
 
-  reset(projectId: string): Promise<Outcome<{ ok: true }>> {
-    return this.gated<{ ok: true }>(`/forge/projects/${projectId}/reset`);
+  reset(projectId: string, step?: (s: GatedStep) => void): Promise<Outcome<{ ok: true }>> {
+    return this.gated<{ ok: true }>(`/forge/projects/${projectId}/reset`, undefined, step);
   }
 
   /** Every project on the forge, for an operator. */
@@ -162,7 +187,7 @@ export class ForgeClient {
   }
 
   /** Delete any project, as an operator. */
-  operatorReset(projectId: string): Promise<Outcome<{ ok: true }>> {
-    return this.gated<{ ok: true }>(`/forge/operator/projects/${projectId}/reset`);
+  operatorReset(projectId: string, step?: (s: GatedStep) => void): Promise<Outcome<{ ok: true }>> {
+    return this.gated<{ ok: true }>(`/forge/operator/projects/${projectId}/reset`, undefined, step);
   }
 }
