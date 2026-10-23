@@ -97,7 +97,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Admit two agents. Each gets an SSH key that lasts an hour and a fork of its own. The new rules need your approval too.",
-    cloudflare: "Artifacts forks the repository for each agent. Each agent runs in its own AgentRun Durable Object, with a write token for its fork alone that lasts 15 minutes.",
+    cloudflare: "Artifacts forks the repository for each agent. Each agent runs in its own AgentRun Durable Object and pushes with a write token for its fork alone that lasts 15 minutes. The hour-long key is the one it signs commits with.",
     where: "#agents",
     done: (s) => Boolean(s && s.agents.length > 0),
     async run(a) {
@@ -129,7 +129,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "The repository rejects it. The commit is validly signed, but a key can never authorize itself: only a promoter changes the rules.",
-    cloudflare: "The verifier runs in the Project Durable Object, on the commits in the fork. Nothing reaches main in Artifacts.",
+    cloudflare: "The Project Durable Object records the rejection, and main in Artifacts does not move.",
     where: ".proposal-rejected .why",
     async run(a) {
       await a.spotlight(".proposal-rejected .why");
@@ -160,7 +160,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Verify the whole history from a fresh clone, pinned to the did:repo address of the repository. No forge record is used.",
-    cloudflare: "The Project Durable Object clones main from Artifacts into memory and runs the verifier on what it fetched.",
+    cloudflare: "The Project Durable Object clones main from Artifacts into memory and verifies those Git objects alone, against the repository id. The next step gives the commands to run the same check on your machine.",
     where: "#outside",
     done: verifiedAfterPromotion,
     async run(a) {
