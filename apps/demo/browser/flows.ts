@@ -106,6 +106,13 @@ export class Flows {
   /** The site recovery codes are for: the demo's RP ID, its host name. */
   readonly site: string;
   readonly autofillRequests: AutofillRequests;
+  /**
+   * Whether a Continue on this page has used no passkey. An immediate request
+   * sees only the passkeys the browser itself holds, so after one finds none,
+   * Continue asks through the browser's sheet, which also offers a password
+   * manager, a phone and a security key.
+   */
+  private continueUsedNone = false;
 
   constructor(client: DemoClient, site: string, autofillRequests = new AutofillRequests()) {
     this.client = client;
@@ -121,11 +128,14 @@ export class Flows {
   // --- signing in -----------------------------------------------------------
 
   /**
-   * Log in with a passkey found on this device. `no-passkey` covers both no
+   * Log in with a passkey found on this device, or after a Continue that used
+   * none, with one picked from the browser's sheet. `no-passkey` covers both no
    * passkey here and a dismissed picker, which browsers do not tell apart.
    */
   async continueWithPasskey(): Promise<LoggedIn> {
-    return loggedIn(await this.client.login());
+    const outcome = loggedIn(await this.client.login(this.continueUsedNone ? "use" : "find"));
+    if (outcome.result === "no-passkey") this.continueUsedNone = true;
+    return outcome;
   }
 
   /**

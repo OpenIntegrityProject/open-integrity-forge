@@ -11,6 +11,8 @@ import {
 import { $, closePane, input, openPane, pane, paneStatus } from "./dom.ts";
 
 const CHOICES_GUIDANCE = "If you do not have a passkey here yet, register; if you lost yours, recover.";
+/** After a Continue that used no passkey, the next asks through the browser's sheet; see `continueWithPasskey`. */
+const CONTINUE_AGAIN = "To use a passkey from a password manager, a phone or a security key, continue again.";
 
 export class SignInPane {
   private availabilityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -73,7 +75,7 @@ export class SignInPane {
    */
   noPasskeyUsed() {
     if (!this.isOpen) return;
-    this.revealChoices(`No passkey was used. ${CHOICES_GUIDANCE}`);
+    this.revealChoices(`No passkey was used. ${CONTINUE_AGAIN} ${CHOICES_GUIDANCE}`);
   }
 
   /** Says nothing once the pane has closed, as it has when another request signed in. */

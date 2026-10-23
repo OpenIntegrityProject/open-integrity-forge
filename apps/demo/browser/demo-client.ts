@@ -109,8 +109,8 @@ export class DemoClient {
     return prepared.result === "prepared" ? this.send<Registered>(prepared) : prepared;
   }
 
-  /** The login's verify request, with a passkey found for it, or picked from autofill. */
-  async loginRequest(mode: Exclude<GetMode, "use"> = "find"): Promise<Prepared | Cancelled | Refused> {
+  /** The login's verify request, with a passkey found for it, picked from autofill, or picked from the browser's sheet. */
+  async loginRequest(mode: GetMode = "find"): Promise<Prepared | Cancelled | Refused> {
     const options = await this.post("/auth/login/options");
     if (!options.ok) return refused(options);
     const found = await this.authenticator.get(await read(options), mode);
@@ -118,8 +118,9 @@ export class DemoClient {
     return { result: "prepared", path: "/auth/login/verify", body: { response: found.response } };
   }
 
-  async login(): Promise<Ok<{ recordId: string }> | Cancelled | Refused> {
-    const prepared = await this.loginRequest();
+  /** Log in with a passkey found without a sheet where the browser can, or with `use`, through the browser's sheet. */
+  async login(mode: "find" | "use" = "find"): Promise<Ok<{ recordId: string }> | Cancelled | Refused> {
+    const prepared = await this.loginRequest(mode);
     return prepared.result === "prepared" ? this.send<{ recordId: string }>(prepared) : prepared;
   }
 

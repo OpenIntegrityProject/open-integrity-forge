@@ -81,6 +81,25 @@ describe("the demo's flows", () => {
     });
   });
 
+  it("ask through the browser's sheet once a Continue has used no passkey", async () => {
+    const app = testApp();
+    const browser = app.browser();
+    await browser.register(uniqueName());
+    const software = softwareAuthenticator(browser.authenticator);
+    const asked: GetMode[] = [];
+    // The browser holds no passkey of its own here, so only its sheet finds the one elsewhere.
+    const flows = flowsOn(browser, {
+      get: (options, mode) => {
+        asked.push(mode);
+        return mode === "find" ? Promise.resolve({ result: "not-found" }) : software.get(options, mode);
+      },
+    });
+
+    expect(await flows.continueWithPasskey()).toEqual({ result: "no-passkey" });
+    expect(await flows.continueWithPasskey()).toEqual({ result: "signed-in" });
+    expect(asked).toEqual(["find", "use"]);
+  });
+
   it("log in with a passkey picked from autofill, asked for under the autofill request's signal", async () => {
     const app = testApp();
     const browser = app.browser();
