@@ -22,6 +22,30 @@ Open Integrity Forge runs on [Cloudflare Workers](https://developers.cloudflare.
 
 [![The commit graph from the video: a repository addressed as did:repo, its passkey-signed main, and the forks of two agents, Ada and Bo](docs/forge-demo-video.jpg)](https://www.youtube.com/watch?v=_KdOGtynXig)
 
+## How it uses Cloudflare
+
+| Product | What it does in the forge | Code |
+| --- | --- | --- |
+| Artifacts | One repository for each project, and a fork of it for each agent. Each agent gets a write token for its own fork that lasts 15 minutes. The forge writes `main` itself with a token that lasts two minutes, and "Show the commands" hands out a read-only token that lasts an hour. Artifacts accepts a push only as a fast-forward. | `apps/forge/src/repo-host.ts` |
+| Durable Objects | `Project` holds a project's state, checks each proposal with the verifier, and writes `main` only with a verified approval. `AgentRun` runs one agent's tasks from an alarm. `Person` keeps a person's promoter key and projects, and `RepoIndex` finds the project a repository belongs to. passkey-cloudflare keeps identity records, challenges and sessions in Durable Objects of its own. | `apps/forge/src/project.ts`, `agent-run.ts`, `person.ts`, `repo-index.ts` |
+| Workers | The routes and the page. Git runs in memory with isomorphic-git, and the verifier in `apps/forge/authority/` needs no server: it runs unchanged in Workers, Node and Bun. | `apps/forge/src/forge.ts`, `apps/forge/authority/` |
+| Queues | Receives Artifacts `pushed` events, so the forge checks a push it did not make, such as one from a laptop. Artifacts sends them only to a subscription for one repository, made through the Cloudflare API with `CF_API_TOKEN`. The live demo leaves that token off, so it does not hear laptop pushes. | `apps/forge/src/events.ts`, `subscriptions.ts` |
+
+```mermaid
+flowchart LR
+  agent["Agent<br/>AgentRun Durable Object"] -- "signed commits,<br/>15-minute token" --> fork[("Agent's fork<br/>in Artifacts")]
+  agent -- proposes --> project["Project Durable Object<br/>runs the verifier"]
+  project -- "reads with a<br/>2-minute token" --> fork
+  person["Person's passkey"] -- "signs the exact<br/>merge commit" --> project
+  project -- "fast-forward push" --> main[("main<br/>in Artifacts")]
+  laptop["Your laptop"] -. "git push" .-> lfork[("Your laptop's fork<br/>in Artifacts")]
+  lfork -. "pushed event<br/>(needs CF_API_TOKEN)" .-> queue[["Queue"]]
+  queue -.-> project
+  main -- "git clone" --> anyone["Anyone: forge-verify<br/>or stock Git"]
+```
+
+[Notes for Cloudflare](docs/notes-for-cloudflare.md) records what building on these products taught: push subscriptions for each repository, why the live demo leaves laptop pushes off, and cold first requests that took over 20 seconds.
+
 ## What the demo shows
 
 1. **Your passkey signs the first commit.** It is an empty inception commit, and its hash becomes the repository's id. The next commit, which your passkey also approves, sets the rules and names your passkey as the only promoter.
