@@ -61,6 +61,8 @@ interface StepActions {
 
 interface Step {
   caption: string;
+  /** What Cloudflare does in this step, shown under the caption. */
+  cloudflare?: string;
   /** The part of the page that this step changes, for "Show me". */
   where?: string;
   /** True when the project has done this step. Play starts after the furthest such step. */
@@ -84,6 +86,7 @@ const verifiedAfterPromotion = (s: ProjectState | null) => {
 const STEPS: Step[] = [
   {
     caption: "Create the project. Your passkey signs the first commit, and its hash becomes the identifier of the repository: did:repo and that hash.",
+    cloudflare: "Artifacts creates the repository, and a Project Durable Object holds the project and writes main with a token that lasts two minutes.",
     // Done only once the first policy is in place: the inception commit alone still needs that second approval.
     done: (s) => Boolean(s?.repoId && s.policy),
     async run(a) {
@@ -94,6 +97,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Admit two agents. Each gets an SSH key that lasts an hour and a fork of its own. The new rules need your approval too.",
+    cloudflare: "Artifacts forks the repository for each agent. Each agent runs in its own AgentRun Durable Object, with a write token for its fork alone that lasts 15 minutes.",
     where: "#agents",
     done: (s) => Boolean(s && s.agents.length > 0),
     async run(a) {
@@ -104,6 +108,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Ada and Bo work at the same time, each in its own fork, and sign every commit with its own key.",
+    cloudflare: "Each AgentRun commits in memory with isomorphic-git, pushes to its fork in Artifacts, and proposes. The Project Durable Object fetches the fork with a read token and runs the verifier.",
     where: "#agents",
     async run(a) {
       await a.spotlight("#agents");
@@ -124,6 +129,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "The repository rejects it. The commit is validly signed, but a key can never authorize itself: only a promoter changes the rules.",
+    cloudflare: "The verifier runs in the Project Durable Object, on the commits in the fork. Nothing reaches main in Artifacts.",
     where: ".proposal-rejected .why",
     async run(a) {
       await a.spotlight(".proposal-rejected .why");
@@ -132,6 +138,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Promote Ada's change. Your passkey signs this exact merge commit: both parents, the resulting tree and the message.",
+    cloudflare: "The Project Durable Object checks the approval, then pushes the merge to main in Artifacts, which accepts only a fast-forward.",
     where: "#proposals",
     done: (s) => Boolean(s?.proposals.some((p) => p.agentId === "ada" && p.status === "promoted")),
     async run(a) {
@@ -153,6 +160,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Verify the whole history from a fresh clone, pinned to the did:repo address of the repository. No forge record is used.",
+    cloudflare: "The Project Durable Object clones main from Artifacts into memory and runs the verifier on what it fetched.",
     where: "#outside",
     done: verifiedAfterPromotion,
     async run(a) {
@@ -163,6 +171,7 @@ const STEPS: Step[] = [
   },
   {
     caption: "Take it anywhere. These commands clone the repository and run the same check with no forge in the loop.",
+    cloudflare: "Artifacts issues a read-only token for this repository that lasts an hour. The clone is plain Git over HTTPS.",
     where: "#outside .commands",
     async run(a) {
       await a.commands();
@@ -227,6 +236,7 @@ const MORE: Step[] = [
   },
   {
     caption: "Release main as a tag that carries your passkey's approval of exactly that commit, tag name and tree.",
+    cloudflare: "The tag reaches Artifacts as an ordinary Git tag, with the approval in its message.",
     where: "#history",
     done: (s) => Boolean(s?.history?.tags.length),
     async run(a) {
@@ -237,6 +247,7 @@ const MORE: Step[] = [
   },
   {
     caption: "Revoke Bo's key. From now on its new signatures fail, and everything it signed before still verifies.",
+    cloudflare: "Revocation is a commit to main in Artifacts. No platform setting changes.",
     where: "#rules",
     done: (s) => Boolean(s?.policy?.authors.some((k) => k.id === "bo" && k.revokedAt)),
     async run(a) {
@@ -430,6 +441,7 @@ export class Story {
       this.ribbon,
       h("p", { class: "story-step" }, `${this.steps === MORE ? "Keep going: step" : "Step"} ${index + 1} of ${this.steps.length}`),
       h("p", { class: "story-caption" }, step.caption),
+      step.cloudflare ? h("p", { class: "story-cloudflare" }, `On Cloudflare: ${step.cloudflare}`) : null,
       this.note,
       h("div", { class: "story-controls" }, this.backButton, showMe, this.pauseButton, stop),
     );
