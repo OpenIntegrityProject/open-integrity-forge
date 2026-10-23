@@ -2,6 +2,7 @@ import {
   createPasskeys,
   credentialIndex,
   credentialLabels,
+  isRecordId,
   PasskeyError,
   sessionValueFrom,
   type Passkeys,
@@ -10,10 +11,13 @@ import {
 } from "passkey-cloudflare";
 import { createApp, type AppOptions } from "../../demo/src/app.ts";
 import { error, json } from "../../demo/src/http.ts";
+import { operatorLog, type OperatorLogEntry } from "../../demo/src/operator-log.ts";
+import { listFrom } from "../../demo/src/operator.ts";
 import { localGitHttp } from "./local-git-http.ts";
 import type { Result } from "./project.ts";
 import { keyFromRegistration } from "./promoter-key.ts";
-import type { PromoterKey, Refusal } from "./state.ts";
+import { repoIndex } from "./repo-index.ts";
+import type { OperatorProject, PromoterKey, Refusal } from "./state.ts";
 
 // The forge Worker. The demo app answers /auth/*, /me, /me/* and /operator/*.
 // The forge uses the passkey sign-in of the demo app without change. The forge
@@ -80,6 +84,14 @@ const NOT_FOUND: Refusal = { error: "no-project", reason: "There is no such proj
 async function owned(call: Call) {
   const stub = project(call.env, call.params[0]!);
   return (await stub.owner()) === call.principal.recordId ? stub : null;
+}
+
+/**
+ * A refusal unless the caller holds the operator role, which the
+ * `OPERATOR_RECORD_IDS` secret grants here as in the demo app.
+ */
+function notOperator(call: Call): Response | null {
+  return listFrom(call.env.OPERATOR_RECORD_IDS).includes(call.principal.recordId) ? null : error(403, "not an operator");
 }
 
 async function allowPrepare(call: Call): Promise<Response | null> {
@@ -345,6 +357,41 @@ const ROUTES: Route[] = [
       await call.passkeys.requireStepUp(call.passkeys.context(call.request), sessionValueFrom(call.request));
       await stub.reset();
       await person(call.env, call.principal.recordId).removeProject(call.params[0]!);
+      return json({ ok: true });
+    },
+  },
+  {
+    // Every project, whoever owns it, so an operator can find the ones left behind, such as a project whose repository is gone.
+    method: "GET",
+    pattern: /^\/forge\/operator\/projects$/,
+    async handler(call) {
+      const refused = notOperator(call);
+      if (refused) return refused;
+      const projects: OperatorProject[] = [];
+      for (const { projectId } of await repoIndex(call.env).projects()) {
+        const summary = await project(call.env, projectId).summary();
+        if (summary) projects.push({ ...summary, ownerName: isRecordId(summary.owner) ? await call.passkeys.memberName(summary.owner) : null });
+      }
+      return json({ projects });
+    },
+  },
+  {
+    // An operator deletes any project as its owner would, after a step-up, with an entry in the operator log first.
+    method: "POST",
+    pattern: new RegExp(`^/forge/operator/projects/${PROJECT_ID}/reset$`),
+    async handler(call) {
+      const refused = notOperator(call);
+      if (refused) return refused;
+      const id = call.params[0]!;
+      const stub = project(call.env, id);
+      const owner = await stub.owner();
+      if (!owner || !isRecordId(owner)) return refusal(404, NOT_FOUND);
+      await call.passkeys.requireStepUp(call.passkeys.context(call.request), sessionValueFrom(call.request));
+      // The demo's log names its own actions; this one is the forge's, so its type widens here.
+      const action = "delete-project" as OperatorLogEntry["action"];
+      await operatorLog(call.env.OPERATOR_LOG, call.storagePrefix)().append({ operatorId: call.principal.recordId, action, targetId: owner, at: Date.now() });
+      await stub.reset();
+      await person(call.env, owner).removeProject(id);
       return json({ ok: true });
     },
   },

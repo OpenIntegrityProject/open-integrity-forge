@@ -9,5 +9,6 @@ export type {
   Outside,
   FreshVerify,
   PushAccess,
+  OperatorProject,
 } from "../src/state.ts";
 export type { RuleResult as RuleResultView } from "../authority/verify.ts";

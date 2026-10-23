@@ -9,8 +9,8 @@ import type { ProjectState } from "../src/state.ts";
 
 const ORIGIN = "http://localhost:8787";
 
-/** The forge Worker as a test uses it, with its own storage prefix for the passkey records. */
-export function testForge() {
+/** The forge Worker as a test uses it, with its own storage prefix for the passkey records, and `vars` over the environment. */
+export function testForge(vars: Partial<Env> = {}) {
   const storagePrefix = crypto.randomUUID();
   const clock = { offsetMs: 0 };
   const app = createForge({ storagePrefix, rateLimits: {}, clock: () => Date.now() + clock.offsetMs });
@@ -21,7 +21,7 @@ export function testForge() {
     clock,
     async fetch(request: Request): Promise<Response> {
       const ctx = createExecutionContext();
-      const response = await app.fetch(request, env as Env, ctx);
+      const response = await app.fetch(request, { ...(env as Env), ...vars }, ctx);
       await waitOnExecutionContext(ctx);
       return response;
     },

@@ -133,7 +133,8 @@ export interface ProjectState {
   version: number;
   name: string;
   createdAt: number;
-  repo: { name: string; host: "artifacts" | "local"; remote: string | null };
+  /** `missing` when the host no longer has the repository, for example after a cleanup outside the forge; the project can still be deleted. */
+  repo: { name: string; host: "artifacts" | "local"; remote: string | null; missing: boolean };
   /** The id of the inception commit, when there is one. */
   repoId: string | null;
   mainHead: string | null;
@@ -206,3 +207,17 @@ export interface CommitDetail {
   /** What the verifier said about this commit, from the last report that holds it. */
   report: CommitReport | null;
 }
+
+/** A project as an operator lists it. */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  owner: string;
+  createdAt: number;
+  repoName: string;
+  /** The host no longer has the repository. */
+  missing: boolean;
+}
+
+/** A project in the operator's list, with its owner's member name when the owner still has one. */
+export type OperatorProject = ProjectSummary & { ownerName: string | null };

@@ -44,6 +44,7 @@ import type {
   Outside,
   ProjectEvent,
   ProjectState,
+  ProjectSummary,
   PromoterKey,
   ProposalState,
   ProposalStatus,
@@ -312,6 +313,23 @@ export class Project extends DurableObject<Env> {
 
   owner(): string | null {
     return this.project()?.owner ?? null;
+  }
+
+  /** What an operator sees of the project: its name, owner, repository, and whether the host still has it. Null once reset. */
+  async summary(): Promise<ProjectSummary | null> {
+    const project = this.project();
+    if (!project) return null;
+    const { id, name, owner, createdAt, repoName } = project;
+    return { id, name, owner, createdAt, repoName, missing: project.repoId ? (await this.remote(project)) === null : false };
+  }
+
+  /** The repository's remote, or null when its host no longer has it. */
+  private async remote(project: ProjectRow): Promise<string | null> {
+    try {
+      return await this.host().remote(project.repoName);
+    } catch {
+      return null;
+    }
   }
 
   // --- approvals ----------------------------------------------------------------------
@@ -1335,6 +1353,7 @@ export class Project extends DurableObject<Env> {
           updatedAt: p.updated_at,
         }),
       );
+    const remote = project.repoId ? await this.remote(project) : null;
     const events = this.sql
       .exec<{ at: number; kind: ProjectEvent["kind"]; text: string }>("SELECT at, kind, text FROM events ORDER BY seq DESC LIMIT 100")
       .toArray()
@@ -1347,7 +1366,8 @@ export class Project extends DurableObject<Env> {
       repo: {
         name: project.repoName,
         host: host.kind,
-        remote: project.repoId ? await host.remote(project.repoName) : null,
+        remote,
+        missing: project.repoId !== null && remote === null,
       },
       repoId: project.repoId,
       mainHead: project.mainHead,

@@ -161,6 +161,9 @@ export class Stage {
           )
         : h("span", null, "Repository: no did:repo yet"),
       h("span", { class: "repo-store" }, state.repo.host === "artifacts" ? "Stored in Cloudflare Artifacts" : "Stored in local Durable Objects"),
+      state.repo.missing
+        ? h("span", { class: "repo-missing" }, "The repository is gone from its host, so nothing in it can be read. Delete this project to clear the rest.")
+        : null,
     );
     const head = byId("history").querySelector(".band-head")!;
     if (!head.querySelector(".legend")) head.append(legend());
