@@ -16,9 +16,35 @@ Open Integrity Forge runs on [Cloudflare Workers](https://developers.cloudflare.
 
 **Live demo:** [https://forgedemo.gordianstack.com](https://forgedemo.gordianstack.com) (sign in with a passkey, then "Play the story")
 
+**Status:** This demo is on hold. Nothing is wrong with it: the live demo stays up, works as described here, and gets security fixes and library updates, but no new features are planned. It is a proof of concept. It does not update Open Integrity's specifications and is not a reference implementation. Blockchain Commons continues to work in this area, including on [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare), the passkey library this forge and future Blockchain Commons projects use. Projects on the live demo are for trying it out, and an operator may delete them without notice, so keep a clone of anything you want to keep. Its known limits are under [What this does not do](#what-this-does-not-do).
+
 **Video:** [Open Integrity Forge](https://www.youtube.com/watch?v=_KdOGtynXig), a seven-minute walkthrough of the demo
 
 [![The commit graph from the video: a repository addressed as did:repo, its passkey-signed main, and the forks of two agents, Ada and Bo](docs/forge-demo-video.jpg)](https://www.youtube.com/watch?v=_KdOGtynXig)
+
+## How it uses Cloudflare
+
+| Product | What it does in the forge | Code |
+| --- | --- | --- |
+| Artifacts | One repository for each project, and a fork of it for each agent and for a person who pushes from a laptop. Write tokens reach one fork only: an agent's lasts 15 minutes and a laptop's an hour. The forge reads forks and writes `main` with tokens that last two minutes, and "Show the commands" hands out a read-only token that lasts an hour. Artifacts accepts a push only as a fast-forward. | `apps/forge/src/repo-host.ts` |
+| Durable Objects | `Project` holds a project's state, checks each proposal with the verifier, and writes `main` only with a verified approval. `AgentRun` runs one agent's tasks from an alarm. `Person` keeps a person's promoter key and projects, and `RepoIndex` finds the project a repository belongs to. The passkey-cloudflare library adds Durable Objects of its own for identity records, credentials, member names, challenges, rate limits and the operator log. | `apps/forge/src/project.ts`, `agent-run.ts`, `person.ts`, `repo-index.ts` |
+| Workers | One Worker serves the routes and the page and consumes the queue. Git runs in memory with isomorphic-git. The verifier in `apps/forge/authority/` depends on no platform: the same code runs in Workers, Node and Bun. | `apps/forge/src/forge.ts`, `apps/forge/authority/` |
+| Queues | Receives Artifacts `pushed` events, so the forge checks a push it did not make, such as one from a laptop. Artifacts sends them only to a subscription for one repository, made through the Cloudflare API with `CF_API_TOKEN`. The live demo leaves that token off, so it does not hear laptop pushes. | `apps/forge/src/events.ts`, `subscriptions.ts` |
+
+```mermaid
+flowchart LR
+  agent["Agent<br/>AgentRun Durable Object"] -- "signed commits,<br/>15-minute token" --> fork[("Agent's fork<br/>in Artifacts")]
+  agent -- proposes --> project["Project Durable Object<br/>runs the verifier"]
+  project -- "reads with a<br/>2-minute token" --> fork
+  person["Person's passkey"] -- "signs the exact<br/>merge commit" --> project
+  project -- "fast-forward push" --> main[("main<br/>in Artifacts")]
+  laptop["Your laptop"] -. "git push,<br/>1-hour token" .-> lfork[("Your laptop's fork<br/>in Artifacts")]
+  lfork -. "pushed event<br/>(needs CF_API_TOKEN)" .-> queue[["Queue"]]
+  queue -.-> project
+  main -- "git clone" --> anyone["Anyone: forge-verify<br/>or stock Git"]
+```
+
+[Notes for Cloudflare](docs/notes-for-cloudflare.md) records what would help an app like this one: a push subscription for a whole namespace, or one the `ARTIFACTS` binding can make, and a look at Durable Object and Artifacts calls that waited 13 to 26 seconds while using almost no CPU.
 
 ## What the demo shows
 
@@ -31,7 +57,7 @@ Open Integrity Forge runs on [Cloudflare Workers](https://developers.cloudflare.
 
 "Play the story" stops wherever your passkey is needed and picks up from the furthest step the project has done, even after a reload. At its end, "Keep going" plays the rest of the video's tour: two agents conflict and the second redoes its change, a release, a key revoked, and an approval opened as a Gordian Envelope.
 
-The demo also lets you revoke an agent's key, release `main` as a tag that carries your approval, make two agents conflict and redo the loser on the new `main`, and delete a project. Two features need a deployment setting that the live demo leaves off: pushing signed work from your own laptop needs `CF_API_TOKEN`, so the forge hears the push, and asking an agent to write a note with Claude needs an Anthropic API key. Every change is checked by the same rules. Settings holds your passkeys, recovery codes and sessions, and, for an operator, tools to look up, suspend or help a member recover, and to list and delete any project.
+The demo also lets you revoke an agent's key, release `main` as a tag that carries your approval, make two agents conflict and redo the loser on the new `main`, and delete a project. Two features need a deployment setting that the live demo leaves off: pushing signed work from your own laptop needs `CF_API_TOKEN` (see [How it uses Cloudflare](#how-it-uses-cloudflare)), and asking an agent to write a note with Claude needs an Anthropic API key. Every change is checked by the same rules. Settings holds your passkeys, recovery codes and sessions, and, for an operator, tools to look up, suspend or help a member recover, and to list and delete any project.
 
 ## The rules
 
@@ -84,17 +110,30 @@ npm run dev -w forge          # http://localhost:8787
 
 Open http://localhost:8787, register with a passkey and create a project. Browsers allow passkeys on `localhost`. Tests, deployment, and the GitHub mirror are described in [apps/forge/README.md](apps/forge/README.md).
 
-## What this does not do yet
+## What this does not do
 
 - **Open Integrity's own verifier does not yet pass a forge repository.** The forge keeps its rules in `policy.json` and generates `allowed_commit_signers` from it, but not `allowed_main_signers` or `allowed_tag_signers`; writing those from the policy is the next step.
-- **The page trusts the forge for the challenge.** The passkey signs the challenge the forge sends; the page does not yet rebuild the commit and check it against the change it shows.
-- **User verification is not enforced for passkey signatures in Git.** OpenSSH's `allowed_signers` has no `verify-required` option, so a passkey signature without user verification would be accepted like one with it.
 - **A release approval binds the repository, ref, commit and tree, not the tag message.** A commit of `main` is signed as a whole, message and author included.
-- **Signer times can be backdated.** Key windows and revocation are judged by the committer time, which the signer writes; short windows limit this, and a trusted timestamp would close it.
 - **One promoter per project.** The policy and the verifier accept several, as well as releases that need more than one approval; the page collects one approval per change.
-- **The agents are scripted**, so the demo runs the same way each time, apart from the optional note written with Claude. A signature proves which key signed, not which model produced the change.
+- **The agents are scripted**, so the demo runs the same way each time. A deployment with an Anthropic API key can have an agent write one note with Claude. A signature proves which key signed, not which model produced the change.
 
-See [SECURITY.md](SECURITY.md) for what an approval signs, the standards beneath it, and these limits with what would close each.
+## Security in brief
+
+**What an approval proves.** Each commit of `main` carries a WebAuthn assertion as its SSH signature. Anyone can check it from a clone, with `forge-verify` or stock Git, and without the forge. It proves four things:
+
+- A passkey scoped to this forge's domain made the signature. OpenSSH checks the domain's hash in the signed authenticator data.
+- The signature covers the whole commit: its parents, tree, author and message. The `Forge-Approval` trailer names the repository and ref, so an approval cannot be moved elsewhere.
+- `forge-verify` also requires that the authenticator verified the person with a PIN or biometric. Stock Git cannot require it.
+- The passkey is one the repository's own signer policy lists. Each change to that policy was approved by a promoter, back to the inception commit, whose passkey the first policy names.
+
+**What it does not prove.**
+
+- **Who the person is.** Nothing ties a passkey to a natural person or to another key they hold.
+- **What made the key.** Registration asks for no attestation. A passkey may be synced, and is then as safe as the account it syncs through.
+- **That the passkey signed what the page showed.** The forge chooses what the passkey signs and serves the page that shows it. An authenticator shows no content.
+- **When the commit was made.** The signer writes the time.
+
+[SECURITY.md](SECURITY.md) covers each of these limits and what would close it. The passkeys come from [passkey-cloudflare](https://github.com/BlockchainCommons/passkey-cloudflare). Its [security model](https://github.com/BlockchainCommons/passkey-cloudflare/blob/main/docs/security-model.md) explains the bindings a passkey can and cannot prove, and lists unexplored ways to prove more. Among them are binding a promoter's passkey to another key they hold, signing enrollments and operator actions, and deriving keys from a passkey.
 
 ## Credits
 
