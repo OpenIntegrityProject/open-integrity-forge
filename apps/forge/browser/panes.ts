@@ -81,6 +81,8 @@ export function wirePanes(hooks: PaneHooks) {
     event.preventDefault();
     const memberName = String(new FormData(event.target as HTMLFormElement).get("memberName"));
     if (signIn.nudged(memberName)) return;
+    // The first request after a quiet time can take many seconds. Say what happens, so the pane does not look stuck.
+    paneStatus("sign-in", "Registering. Your browser asks you to make a passkey next.");
     const registered = await flows.register(memberName);
     if (registered.result === "told") return tellIn("sign-in", registered);
     signIn.close();
@@ -92,6 +94,7 @@ export function wirePanes(hooks: PaneHooks) {
   async function recover(event: SubmitEvent) {
     event.preventDefault();
     const form = new FormData(event.target as HTMLFormElement);
+    paneStatus("sign-in", "Recovering. Your browser asks you to make a new passkey next.");
     const recovered = await flows.recover(String(form.get("memberName")), String(form.get("code")));
     if (recovered.result === "told") return tellIn("sign-in", recovered);
     signIn.close();

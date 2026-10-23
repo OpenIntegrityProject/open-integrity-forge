@@ -10,7 +10,7 @@ import { DemoClient } from "../../demo/browser/demo-client.ts";
 import { status } from "../../demo/browser/dom.ts";
 import { Flows } from "../../demo/browser/flows.ts";
 import { showApp } from "../../demo/browser/shell.ts";
-import { ForgeClient, type ForgeMe, type Outcome } from "./forge-client.ts";
+import { ForgeClient, type ForgeMe, type GatedStep, type Outcome } from "./forge-client.ts";
 import { ask } from "./ask.ts";
 import { copy } from "./copy.ts";
 import { byId, fill, h, reducedMotion } from "./h.ts";
@@ -29,9 +29,21 @@ const demoClient = new DemoClient(target, passkeys);
 const flows = new Flows(demoClient, location.hostname, passkeys.autofillRequests);
 const forge = new ForgeClient(target, demoClient, passkeys);
 
+let working = 0;
+
+/**
+ * Mark the page as working while `promise` runs: the cursor and a bar at the
+ * top of the page show it. The first request after a quiet time can take many
+ * seconds, so a press must never look ignored.
+ */
+function track<T>(promise: Promise<T>): Promise<T> {
+  document.body.toggleAttribute("data-working", ++working > 0);
+  return promise.finally(() => document.body.toggleAttribute("data-working", --working > 0));
+}
+
 function guard<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
   return (...args: A) =>
-    void fn(...args).catch((error) => {
+    void track(fn(...args)).catch((error) => {
       console.error(error);
       say("Something went wrong. Reload the page and try again.");
     });
@@ -62,20 +74,31 @@ function passkeyAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>
       await fn(...args);
     } finally {
       setBusy(false);
+      // A step that the action showed ends with the action.
+      if (lastingShown) say("");
     }
   });
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+let lastingShown = false;
 
-/** Show `message` in the toast for 6 seconds. When a pane is open, `status` writes it in that pane. */
-function say(message: string) {
+/**
+ * Show `message` in the toast for 6 seconds. With `lasting`, show it until the
+ * next message or the end of the passkey action, for a step that can take long.
+ * When a pane is open, `status` writes it in that pane.
+ */
+function say(message: string, lasting = false) {
   status(message);
   const toast = byId("status");
   toast.classList.toggle("toast-shown", message !== "");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("toast-shown"), 6000);
+  lastingShown = lasting;
+  if (!lasting) toastTimer = setTimeout(() => toast.classList.remove("toast-shown"), 6000);
 }
+
+/** Show the steps of a request that needs a step-up: the passkey, then `doing`. */
+const steps = (doing: string) => (step: GatedStep) => say(step === "passkey" ? "Asking for your passkey…" : doing, true);
 
 const reason = <T>(o: Outcome<T>) => (o.result === "refused" ? o.refusal.reason : o.result === "cancelled" ? "Cancelled." : "");
 
@@ -107,7 +130,7 @@ const stage = new Stage(() => passkeyActionRunning, {
   pushAccess: passkeyAction(async (personId: string) => {
     const id = shownId();
     if (!id) return;
-    const got = await forge.pushAccess(id, personId);
+    const got = await forge.pushAccess(id, personId, steps("Making the push token…"));
     if (got.result !== "ok") return say(reason(got));
     stage.access.set(personId, got.value);
     if (current) stage.render(current);
@@ -146,6 +169,7 @@ function received(state: ProjectState) {
   // An approval's answer arrives when the sheet closes, after the stream may have sent newer states. Keep the newer one.
   if (current?.id === state.id && state.version < current.version) return;
   current = state;
+  byId("stage-loading").hidden = true;
   byId("stage").hidden = false;
   stage.render(state);
   for (const listener of [...listeners]) listener(state);
@@ -156,6 +180,7 @@ async function reload() {
   if (!id) return;
   const got = await forge.state(id);
   if (got.result === "ok") received(got.value);
+  else if (projectIdFromHash() === id && !current) byId("stage-loading").textContent = reason(got);
 }
 
 // --- views ------------------------------------------------------------------------
@@ -253,6 +278,9 @@ function route() {
   }
   byId("start").hidden = Boolean(id);
   byId("stage").hidden = !current;
+  // The stage stays hidden until the state arrives. Say that it loads, rather than show an empty page.
+  byId("stage-loading").hidden = Boolean(current) || !id || !me;
+  byId("stage-loading").textContent = "Loading the project…";
   byId("play-story").hidden = !id;
   projectSwitch();
   if (!me) return;
@@ -260,7 +288,7 @@ function route() {
     startView();
     return;
   }
-  void reload();
+  void track(reload());
   const s = new EventSource(`/forge/projects/${id}/stream`);
   s.addEventListener("state", (event) => received(JSON.parse((event as MessageEvent<string>).data) as ProjectState));
   source = s;
@@ -287,7 +315,7 @@ async function deleteProject(id: string, name: string) {
     danger: true,
   });
   if (!deleting) return;
-  const done = await forge.reset(id);
+  const done = await forge.reset(id, steps(`Deleting ${name}…`));
   if (done.result !== "ok") return say(reason(done));
   if (current?.id === id || projectIdFromHash() === id) {
     story.stop();
@@ -330,7 +358,7 @@ async function operatorDelete(p: OperatorProject) {
     danger: true,
   });
   if (!deleting) return;
-  const done = await forge.operatorReset(p.id);
+  const done = await forge.operatorReset(p.id, steps(`Deleting ${p.name}…`));
   if (done.result !== "ok") return say(reason(done));
   say(`${p.name} is deleted.`);
   await operatorProjects();
@@ -341,7 +369,7 @@ async function operatorDelete(p: OperatorProject) {
 async function passkeyMade(replace = false) {
   const created = passkeys.takeCreated();
   if (!created || (me?.promoter && !replace)) return;
-  const set = await forge.setPromoterKey(created);
+  const set = await forge.setPromoterKey(created, steps("Making it your promoter key…"));
   say(set.result === "ok" ? `Your passkey ${set.value.label ?? ""} is now your promoter key.` : reason(set));
 }
 
@@ -470,7 +498,7 @@ async function mirror() {
   if (!current) return;
   stage.mirroring = true;
   stage.render(current);
-  const mirrored = await forge.mirror(current.id);
+  const mirrored = await forge.mirror(current.id, steps("Mirroring main…"));
   stage.mirroring = false;
   say(mirrored.result === "ok" ? `Mirrored main to ${mirrored.value.target}.` : reason(mirrored));
   await reload();
@@ -599,10 +627,14 @@ byId("promoter-badge").addEventListener(
     await copy(byId<HTMLButtonElement>("promoter-badge"), JSON.stringify(me.promoter.publicKey));
   }),
 );
-const playStory = guard(async () => {
+// The story shows its own progress in its ribbon, so it does not mark the page as working while it plays.
+const playStory = () => {
   if (story.isPlaying) return;
-  await story.play();
-});
+  story.play().catch((error) => {
+    console.error(error);
+    say("Something went wrong. Reload the page and try again.");
+  });
+};
 byId("play-story").addEventListener("click", playStory);
 byId("start-story").addEventListener("click", playStory);
 byId("reset").addEventListener(
