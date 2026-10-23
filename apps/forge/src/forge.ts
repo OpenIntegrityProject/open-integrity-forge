@@ -417,8 +417,11 @@ export function createForge(options: ForgeOptions = {}) {
         rp: { id: env.RP_ID, name: env.RP_NAME, origin: env.ORIGIN },
         refusalFloorMs: Number(env.REFUSAL_FLOOR_MS),
         clock: options.clock,
+        sessionLifetimeMs: options.sessionLifetimeMs,
+        onRevoke: options.onRevoke,
         rateLimits: options.rateLimits,
         storagePrefix: options.storagePrefix,
+        sourceOf: options.sourceOf,
       });
       const principal = await passkeys.authenticate(sessionValueFrom(request));
       if (!principal) return error(401, "not logged in");

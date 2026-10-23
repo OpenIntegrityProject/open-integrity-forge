@@ -22,7 +22,7 @@
     "RP_ID": "forgedemo.gordianstack.com",
     "RP_NAME": "Open Integrity Forge Demo",
     "ORIGIN": "https://forgedemo.gordianstack.com",
-    "REFUSAL_FLOOR_MS": "800",
+    "REFUSAL_FLOOR_MS": "1050",
     // With "artifacts", the repositories are in Cloudflare Artifacts. With "local", they are in the LocalRepo Durable Object.
     "REPO_HOST": "artifacts",
     "AGENT_KEY_TTL_S": "3600",

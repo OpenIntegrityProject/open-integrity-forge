@@ -6,6 +6,7 @@ import {
   creationOptionsFromJSON,
   findPasskey,
   fromBase64Url,
+  PAGE_FOCUS_WAIT_MS,
   requestOptionsFromJSON,
   signalRevokedPasskey,
   toBase64Url,
@@ -80,6 +81,67 @@ describe("createPasskey", () => {
     const error = new DOMException("bad rp", "SecurityError");
     stubCredentials({ create: () => Promise.reject(error) });
     await expect(createPasskey(creationOptions)).rejects.toBe(error);
+  });
+
+  describe("on a page without focus", () => {
+    /** A page whose focus `focus()` gives back, firing the window's focus event. */
+    function stubUnfocusedPage() {
+      let focused = false;
+      const listeners = new Set<() => void>();
+      vi.stubGlobal("document", { hasFocus: () => focused });
+      vi.stubGlobal("window", {
+        addEventListener: (type: string, listener: () => void) => type === "focus" && listeners.add(listener),
+        removeEventListener: (type: string, listener: () => void) => type === "focus" && listeners.delete(listener),
+      });
+      return {
+        focus() {
+          focused = true;
+          for (const listener of [...listeners]) listener();
+        },
+        listeners,
+      };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("waits for focus to come back, then makes the passkey", async () => {
+      vi.useFakeTimers();
+      const page = stubUnfocusedPage();
+      const create = vi.fn(async () => ({ toJSON: () => registrationJSON }));
+      stubCredentials({ create });
+
+      const created = createPasskey(creationOptions);
+      await vi.advanceTimersByTimeAsync(PAGE_FOCUS_WAIT_MS - 1);
+      expect(create).not.toHaveBeenCalled();
+      page.focus();
+
+      expect(await created).toEqual({ result: "created", response: registrationJSON });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(page.listeners.size).toBe(0);
+    });
+
+    it("returns not-focused without asking the browser when focus does not come back in time", async () => {
+      vi.useFakeTimers();
+      const page = stubUnfocusedPage();
+      const create = vi.fn(async () => ({ toJSON: () => registrationJSON }));
+      stubCredentials({ create });
+
+      const created = createPasskey(creationOptions);
+      await vi.advanceTimersByTimeAsync(PAGE_FOCUS_WAIT_MS);
+
+      expect(await created).toEqual({ result: "not-focused" });
+      expect(create).not.toHaveBeenCalled();
+      expect(page.listeners.size).toBe(0);
+    });
+
+    it("still returns not-created for NotAllowedError once the page has focus", async () => {
+      const page = stubUnfocusedPage();
+      page.focus();
+      stubCredentials({ create: () => Promise.reject(new DOMException("no", "NotAllowedError")) });
+      expect(await createPasskey(creationOptions)).toEqual({ result: "not-created" });
+    });
   });
 });
 

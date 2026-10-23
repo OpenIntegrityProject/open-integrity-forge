@@ -60,11 +60,21 @@ export async function refusalArms(setup: ArmSetup): Promise<Record<string, Arm>>
     };
   };
 
+  // A new registration presenting the credential ID of the person's passkey,
+  // which the credential index already holds. The refusal binds nothing, so
+  // the same ID can be presented again and again.
+  const heldId = person.authenticator.credentials.at(-1)!.id;
+  const credentialExists: Arm = async () => {
+    const client = setup.browser().clientAnswering({ tamper: { credentialId: heldId } });
+    return prepared(await client.registerRequest(uniqueName()));
+  };
+
   return {
     "unknown challenge": loginAttempt(person, { challenge: "dW5rbm93bi1jaGFsbGVuZ2UtdW5rbm93bi1jaGFsbGVuZ2U" }),
     "wrong origin": loginAttempt(person, { origin: "https://evil.example" }),
     "cross origin": loginAttempt(person, { crossOrigin: true }),
     "credential ID too long": tooLongCredentialId,
+    "credential exists": credentialExists,
     "wrong RP ID": loginAttempt(person, { rpId: "evil.example" }),
     "bad signature": loginAttempt(person, { badSignature: true }),
     "regressed sign count": loginAttempt(person, { signCount: 1 }),

@@ -244,7 +244,7 @@ describe("invariants", () => {
         (m) => m[1],
       ),
     );
-    for (const cause of ["unknown-challenge", "wrong-origin", "cross-origin", "credential-id-too-long", "wrong-rp-id", "bad-signature", "counter-regressed", "backup-eligibility-changed", "unknown-credential", "suspended", "wrong-recovery-code", "unknown-member-name", "malformed-response"]) {
+    for (const cause of ["unknown-challenge", "wrong-origin", "cross-origin", "credential-id-too-long", "credential-exists", "wrong-rp-id", "bad-signature", "counter-regressed", "backup-eligibility-changed", "unknown-credential", "suspended", "wrong-recovery-code", "unknown-member-name", "malformed-response"]) {
       expect(causes).toContain(cause);
     }
     expect(causes).not.toContain("rate-limited");

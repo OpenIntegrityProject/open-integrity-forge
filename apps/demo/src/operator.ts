@@ -1,5 +1,5 @@
 import { isRecordId, PasskeyError, sessionValueFrom, type RecordId } from "passkey-cloudflare";
-import { error, json, type Call, type Handler } from "./http.ts";
+import { error, json, originChecked, type Call, type Handler, type PostRoute } from "./http.ts";
 import type { OperatorLogEntry } from "./operator-log.ts";
 import type { MemberView, OperatorActed } from "./responses.ts";
 
@@ -104,8 +104,9 @@ async function withMember(call: Call, targetId: RecordId, extra: Record<string, 
 }
 
 /** The operator routes, each answering a POST, given who holds the operator role. */
-export function operatorRoutes(roles: OperatorRolesFor): Record<string, Handler> {
-  const route = (logged: OperatorLogEntry["action"], action: Action) => operatorRoute(roles, logged, action);
+export function operatorRoutes(roles: OperatorRolesFor): Record<string, PostRoute> {
+  const route = (logged: OperatorLogEntry["action"], action: Action) =>
+    originChecked(operatorRoute(roles, logged, action));
   return {
     "/operator/lookup": route("lookup", {
       target: recordNamedByMemberName,

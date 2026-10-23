@@ -16,7 +16,11 @@ import { prefixedInstance } from "../storage-prefix.ts";
 // rows. It sees only ids and hashes: never a label, a member name, a session
 // token or a code.
 
-export const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long a session lasts when the app sets no lifetime of its own. */
+export const SESSION_LIFETIME_MS = 7 * DAY_MS;
+/** The longest lifetime an app may set for its sessions. */
+export const MAX_SESSION_LIFETIME_MS = 30 * DAY_MS;
 export const STEP_UP_WINDOW_MS = 10 * 60 * 1000;
 export const RECOVERY_ATTEMPTS_PER_HOUR = 5;
 const HOUR_MS = 60 * 60 * 1000;
@@ -28,6 +32,8 @@ export interface NewSession {
   userAgent: string;
   /** Whether the passkey ceremony that started the session was user-verified. */
   userVerified: boolean;
+  /** How long the session lasts from the ceremony that starts it, in milliseconds. */
+  lifetimeMs: number;
 }
 
 export interface Principal {
@@ -59,11 +65,17 @@ export interface RecordSummary {
   rebindLinkOutstanding: boolean;
 }
 
+/** A credential's transports, as its `transports` column stores them. */
+function parseTransports(stored: string): string[] {
+  return JSON.parse(stored) as string[];
+}
+
 export interface CredentialSummary {
   id: string;
   createdAt: number;
   lastUsedAt: number | null;
   aaguid: string;
+  transports: string[];
   backupEligible: boolean;
   backedUp: boolean;
 }
@@ -130,6 +142,7 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
   used_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS recovery_attempts (
+  source_hash TEXT NOT NULL,
   at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS rebind_tokens (
@@ -178,7 +191,7 @@ export class IdentityRecord<Env = unknown> extends DurableObject<Env> {
       session.id,
       session.tokenHash,
       now,
-      now + SESSION_LIFETIME_MS,
+      now + session.lifetimeMs,
       session.userAgent,
       session.userVerified ? 1 : 0,
     );
@@ -350,7 +363,7 @@ export class IdentityRecord<Env = unknown> extends DurableObject<Env> {
     return this.sql
       .exec<{ id: string; transports: string }>("SELECT id, transports FROM credentials ORDER BY created_at")
       .toArray()
-      .map((r) => ({ id: r.id, transports: JSON.parse(r.transports) as string[] }));
+      .map((r) => ({ id: r.id, transports: parseTransports(r.transports) }));
   }
 
   /** Complete a step-up on the session that asked for it. */
@@ -396,15 +409,19 @@ export class IdentityRecord<Env = unknown> extends DurableObject<Env> {
         created_at: number;
         last_used_at: number | null;
         aaguid: string;
+        transports: string;
         registration_flags: number;
         last_flags: number | null;
-      }>("SELECT id, created_at, last_used_at, aaguid, registration_flags, last_flags FROM credentials ORDER BY created_at")
+      }>(
+        "SELECT id, created_at, last_used_at, aaguid, transports, registration_flags, last_flags FROM credentials ORDER BY created_at",
+      )
       .toArray()
       .map((row) => ({
         id: row.id,
         createdAt: row.created_at,
         lastUsedAt: row.last_used_at,
         aaguid: row.aaguid,
+        transports: parseTransports(row.transports),
         backupEligible: (row.registration_flags & FLAG_BACKUP_ELIGIBLE) !== 0,
         backedUp: ((row.last_flags ?? row.registration_flags) & FLAG_BACKED_UP) !== 0,
       }));
@@ -412,25 +429,29 @@ export class IdentityRecord<Env = unknown> extends DurableObject<Env> {
   }
 
   /**
-   * Revoke a credential for a stepped-up session, returning its AAGUID. The
-   * last credential is never revoked.
+   * Revoke a credential for a stepped-up session, returning its AAGUID and
+   * stored transports. The last credential is never revoked.
    */
   revokeCredential(input: {
     tokenHash: string;
     credentialId: string;
     now: number;
-  }): RecordResult<{ aaguid: string }, SessionCause | "not-found" | "last-credential"> {
+  }): RecordResult<{ aaguid: string; transports: string[] }, SessionCause | "not-found" | "last-credential"> {
     const gate = this.gate(input.tokenHash, input.now, "stepped-up");
     if (!gate.ok) return gate;
-    return this.ctx.storage.transactionSync((): RecordResult<{ aaguid: string }, "not-found" | "last-credential"> => {
+    type Revoked = RecordResult<{ aaguid: string; transports: string[] }, "not-found" | "last-credential">;
+    return this.ctx.storage.transactionSync((): Revoked => {
       const [row] = this.sql
-        .exec<{ aaguid: string }>("SELECT aaguid FROM credentials WHERE id = ?", input.credentialId)
+        .exec<{ aaguid: string; transports: string }>(
+          "SELECT aaguid, transports FROM credentials WHERE id = ?",
+          input.credentialId,
+        )
         .toArray();
       if (!row) return { ok: false, cause: "not-found" };
       const count = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM credentials").one().n;
       if (count <= 1) return { ok: false, cause: "last-credential" };
       this.sql.exec("DELETE FROM credentials WHERE id = ?", input.credentialId);
-      return { ok: true, aaguid: row.aaguid };
+      return { ok: true, aaguid: row.aaguid, transports: parseTransports(row.transports) };
     });
   }
 
@@ -438,17 +459,22 @@ export class IdentityRecord<Env = unknown> extends DurableObject<Env> {
    * Check a recovery attempt before the ceremony binds anything: apply the
    * throttle, count the attempt, and check that the code is one of the
    * record's unused codes, without using it. Every attempt counts against the
-   * throttle, whatever its outcome.
+   * throttle for its source, whatever its outcome, so that one source's junk
+   * codes cannot keep the member from recovering from another.
    */
-  checkRecoveryAttempt(input: { codeHash: string; now: number }): RecordResult {
+  checkRecoveryAttempt(input: { codeHash: string; sourceHash: string; now: number }): RecordResult {
     const refused = this.unavailableCause();
     if (refused) return { ok: false, cause: refused };
     const recent = this.sql
-      .exec<{ n: number }>("SELECT COUNT(*) AS n FROM recovery_attempts WHERE at > ?", input.now - HOUR_MS)
+      .exec<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM recovery_attempts WHERE source_hash = ? AND at > ?",
+        input.sourceHash,
+        input.now - HOUR_MS,
+      )
       .one().n;
     if (recent >= RECOVERY_ATTEMPTS_PER_HOUR) return { ok: false, cause: "recovery-throttled" };
     this.sql.exec("DELETE FROM recovery_attempts WHERE at <= ?", input.now - HOUR_MS);
-    this.sql.exec("INSERT INTO recovery_attempts (at) VALUES (?)", input.now);
+    this.sql.exec("INSERT INTO recovery_attempts (source_hash, at) VALUES (?, ?)", input.sourceHash, input.now);
     const unused = this.sql
       .exec("SELECT 1 FROM recovery_codes WHERE code_hash = ? AND used_at IS NULL", input.codeHash)
       .toArray();

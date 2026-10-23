@@ -113,6 +113,36 @@ describe("passkeys", () => {
     expect(credentials[0]).toMatchObject({ provider: null, backupEligible: false, lastUsedAt: null });
   });
 
+  it("on a security key that names no AAGUID are listed as held by a security key", async () => {
+    const browser = testApp().browser({ transports: ["usb"] });
+    await browser.register(uniqueName());
+
+    const { credentials } = await browser.json(browser.get("/me/credentials"));
+
+    expect(credentials[0]).toMatchObject({ provider: "Security key" });
+  });
+
+  it.each([[["internal"]], [["hybrid", "internal"]], [["usb", "internal"]], [[]]])(
+    "with an unknown AAGUID and transports %j are listed without a provider name",
+    async (transports) => {
+      const browser = testApp().browser({ transports });
+      await browser.register(uniqueName());
+
+      const { credentials } = await browser.json(browser.get("/me/credentials"));
+
+      expect(credentials[0]).toMatchObject({ provider: null });
+    },
+  );
+
+  it("whose AAGUID is named are listed by that name, whatever their transports", async () => {
+    const browser = testApp().browser({ aaguid: aaguidBytes(APPLE_PASSWORDS), transports: ["usb", "nfc"] });
+    await browser.register(uniqueName());
+
+    const { credentials } = await browser.json(browser.get("/me/credentials"));
+
+    expect(credentials[0]).toMatchObject({ provider: "Apple Passwords" });
+  });
+
   it("can be revoked by label, after which that passkey no longer logs in", async () => {
     const browser = testApp().browser();
     await browser.register(uniqueName());
@@ -190,6 +220,18 @@ describe("passkeys", () => {
       credentialId: expect.any(String),
       rpId: "passkeydemo.gordianstack.com",
     });
+  });
+
+  it("on a security key, when revoked, name the security key as the provider", async () => {
+    const browser = testApp().browser({ transports: ["usb", "nfc"] });
+    await browser.register(uniqueName());
+    await browser.stepUp();
+    await browser.enrol();
+    const { credentials } = await browser.json(browser.get("/me/credentials"));
+
+    const revoked = await browser.json(browser.post("/me/credentials/revoke", { label: credentials[0].label }));
+
+    expect(revoked).toMatchObject({ ok: true, provider: "Security key" });
   });
 
   it("left without a label are given one when listed, and that label revokes them", async () => {
