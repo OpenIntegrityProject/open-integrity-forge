@@ -309,8 +309,8 @@
         </div>
         <p id="operator-result"></p>
         <h4>Projects</h4>
-        <p class="small muted">Every project on this forge, whoever owns it. Delete removes its repositories, forks, agents and records, and is logged.</p>
-        <button id="operator-projects-load" type="button">List projects</button>
+        <p class="small muted">Every project on this forge, whoever owns it. Delete removes its repositories, forks, agents and records. Listing and deleting ask for your passkey, and both are logged.</p>
+        <button id="operator-projects-load" type="button" data-passkey="on">List projects</button>
         <table id="operator-projects" hidden>
           <thead><tr><th>Project</th><th>Owner</th><th>Created</th><th>Repository</th><th></th></tr></thead>
           <tbody id="operator-project-rows"></tbody>

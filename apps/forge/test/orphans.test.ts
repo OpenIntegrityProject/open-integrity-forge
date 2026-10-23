@@ -40,7 +40,7 @@ describe("an operator", () => {
     return { app, operator };
   }
 
-  it("lists every project with its owner, and whether its repository is gone", async () => {
+  it("lists every project with its owner, and whether its repository is gone, after a step-up, and logs it first", async () => {
     const { app, operator } = await forgeWithOperator();
     const leo = new Person(app);
     const leoName = uniqueName("Leo");
@@ -48,12 +48,21 @@ describe("an operator", () => {
     const kept = must(await createProject(leo, "kept"));
     const gone = must(await createProject(leo, "gone"));
     await removeRepo(gone.repo.name);
+    const operatorId = (await operator.forge.me())!.recordId;
+
+    const raw = await operator.browser.post("/forge/operator/projects", {});
+    expect(raw.status).toBe(403);
+    expect(((await raw.json()) as { error: string }).error).toBe("step-up-required");
+    const unlogged = await operatorLog(env.OPERATOR_LOG, app.storagePrefix)().listFor(operatorId as never);
+    expect(unlogged.map((e) => e.action)).not.toContain("list-projects");
 
     const listed = must(await operator.forge.operatorProjects()).projects;
     expect(listed.find((p) => p.id === kept.id)).toMatchObject({ name: "kept", ownerName: leoName, missing: false });
     expect(listed.find((p) => p.id === gone.id)).toMatchObject({ name: "gone", ownerName: leoName, missing: true });
 
     expect(await leo.forge.operatorProjects()).toMatchObject({ result: "refused", status: 403 });
+    const entries = await operatorLog(env.OPERATOR_LOG, app.storagePrefix)().listFor(operatorId as never);
+    expect(entries.map((e) => e.action)).toContain("list-projects");
   });
 
   it("deletes another person's project after a step-up, and logs it first", async () => {
