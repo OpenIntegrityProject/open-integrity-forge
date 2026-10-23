@@ -327,7 +327,13 @@ async function deleteProject(id: string, name: string) {
 
 /** The operator's list of every project, in settings, each with a Delete button. */
 async function operatorProjects() {
-  const listed = await forge.operatorProjects();
+  const load = byId<HTMLButtonElement>("operator-projects-load");
+  load.disabled = true;
+  load.textContent = "Listing…";
+  const listed = await forge.operatorProjects().finally(() => {
+    load.disabled = false;
+    load.textContent = "List projects";
+  });
   if (listed.result !== "ok") return say(reason(listed));
   byId("operator-projects").hidden = false;
   const projects = listed.value.projects;

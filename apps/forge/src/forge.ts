@@ -367,12 +367,14 @@ const ROUTES: Route[] = [
     async handler(call) {
       const refused = notOperator(call);
       if (refused) return refused;
-      const projects: OperatorProject[] = [];
-      for (const { projectId } of await repoIndex(call.env).projects()) {
-        const summary = await project(call.env, projectId).summary();
-        if (summary) projects.push({ ...summary, ownerName: isRecordId(summary.owner) ? await call.passkeys.memberName(summary.owner) : null });
-      }
-      return json({ projects });
+      // Ask every project at once: each one that has been quiet can take seconds to answer.
+      const listed = await Promise.all(
+        (await repoIndex(call.env).projects()).map(async ({ projectId }): Promise<OperatorProject | null> => {
+          const summary = await project(call.env, projectId).summary();
+          return summary && { ...summary, ownerName: isRecordId(summary.owner) ? await call.passkeys.memberName(summary.owner) : null };
+        }),
+      );
+      return json({ projects: listed.filter((p) => p !== null) });
     },
   },
   {

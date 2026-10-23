@@ -1792,7 +1792,8 @@ dialog[data-state="waiting"] .seal-button {
 body[data-working] {
   cursor: progress;
 }
-body[data-working]::before {
+body[data-working]::before,
+body[data-working] dialog:modal::before {
   content: "";
   position: fixed;
   inset: 0 0 auto;
@@ -1891,7 +1892,8 @@ body[data-working]::before {
     transition: none !important;
   }
   /* With no motion, the working bar is a still bar. */
-  body[data-working]::before {
+  body[data-working]::before,
+  body[data-working] dialog:modal::before {
     opacity: 1;
     background-size: 100% 100%;
   }
