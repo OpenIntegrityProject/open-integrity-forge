@@ -181,9 +181,9 @@ export class ForgeClient {
     return this.gated<{ ok: true }>(`/forge/projects/${projectId}/reset`, undefined, step);
   }
 
-  /** Every project on the forge, for an operator. */
-  async operatorProjects(): Promise<Outcome<{ projects: OperatorProject[] }>> {
-    return outcome<{ projects: OperatorProject[] }>(await this.request("GET", "/forge/operator/projects"));
+  /** Every project on the forge, for an operator, after a step-up. */
+  operatorProjects(step?: (s: GatedStep) => void): Promise<Outcome<{ projects: OperatorProject[] }>> {
+    return this.gated<{ projects: OperatorProject[] }>("/forge/operator/projects", undefined, step);
   }
 
   /** Delete any project, as an operator. */

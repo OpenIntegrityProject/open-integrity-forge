@@ -98,12 +98,11 @@ describe("rate limits", () => {
     expect((await app.browser().recover(name, recoveryCodes[0]!)).result).toBe("ok");
   });
 
-  it("refuse recovery globally past the global limit", async () => {
-    const app = testApp({ rateLimits: { recoverGlobal: { limit: 1, windowMs: HOUR } } });
+  it("refuse recovery past the global anonymous ceremony limit", async () => {
+    const app = testApp({ rateLimits: { ceremonyGlobal: { limit: 1, windowMs: HOUR } } });
     const name = uniqueName();
+    // The registration fills the app's global bucket.
     const { recoveryCodes } = await app.browser().register(name);
-    // This recovery fills the app's global bucket.
-    await app.browser().recover(name, "dddd-dddd-dddd-dddd-dddd-dddd");
 
     expect(refusal(await app.browser().recover(name, recoveryCodes[0]!)).status).toBe(400);
   });

@@ -19,8 +19,6 @@ export interface RateLimits {
   nameCheckPerSource: Limit;
   /** Recovery attempts from one source address. */
   recoverPerSource: Limit;
-  /** Recovery attempts from everywhere. */
-  recoverGlobal: Limit;
 }
 
 const MINUTE = 60 * 1000;
@@ -28,11 +26,13 @@ const HOUR = 60 * MINUTE;
 
 export const DEFAULT_RATE_LIMITS: RateLimits = {
   ceremonyPerSource: { limit: 30, windowMs: MINUTE },
+  // 6000 anonymous ceremony requests in a minute fill this, which takes about
+  // 200 sources at the per-source limit. A full bucket refuses every login,
+  // registration, recovery and rebind for the rest of that minute.
   ceremonyGlobal: { limit: 6000, windowMs: MINUTE },
   optionsPerSource: { limit: 60, windowMs: MINUTE },
   nameCheckPerSource: { limit: 60, windowMs: MINUTE },
   recoverPerSource: { limit: 10, windowMs: HOUR },
-  recoverGlobal: { limit: 1000, windowMs: HOUR },
 };
 
 export class RateLimiter<Env = unknown> extends DurableObject<Env> {

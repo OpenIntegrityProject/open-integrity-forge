@@ -16,12 +16,29 @@ async function sourceHash(ip: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** The failures recorded globally, from any source address or none, with each one's source hash. */
+function globalRows(storagePrefix: string) {
+  return runInDurableObject(ceremonyFailures(env.CEREMONY_FAILURES, storagePrefix)(), (_instance, state) =>
+    state.storage.sql
+      .exec<{ ceremony: string; cause: string; source_hash: string }>(
+        "SELECT ceremony, cause, source_hash FROM failures",
+      )
+      .toArray(),
+  );
+}
+
 /** The failures recorded globally from one source address, in the storage of the app with this prefix. */
 export async function globalFailuresFrom(storagePrefix: string, browser: Browser) {
   const hash = await sourceHash(browser.ip);
-  return runInDurableObject(ceremonyFailures(env.CEREMONY_FAILURES, storagePrefix)(), (_instance, state) =>
-    state.storage.sql
-      .exec<{ ceremony: string; cause: string }>("SELECT ceremony, cause FROM failures WHERE source_hash = ?", hash)
-      .toArray(),
-  );
+  return (await globalRows(storagePrefix))
+    .filter((row) => row.source_hash === hash)
+    .map(({ ceremony, cause }) => ({ ceremony, cause }));
+}
+
+/**
+ * Every failure recorded globally, whatever its source address, in the storage
+ * of the app with this prefix: for a refusal recorded with no source address.
+ */
+export async function globalFailures(storagePrefix: string) {
+  return (await globalRows(storagePrefix)).map(({ ceremony, cause }) => ({ ceremony, cause }));
 }

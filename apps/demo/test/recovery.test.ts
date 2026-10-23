@@ -203,31 +203,33 @@ describe("recovery", () => {
     expect(refused.status).toBe(400);
   });
 
-  it("allows five attempts per hour for a record", async () => {
+  it("allows five attempts per hour from one source for a record", async () => {
     let now = Date.now();
     const app = testApp({ clock: () => now });
     const name = uniqueName();
     const { recoveryCodes } = await app.browser().register(name);
+    const device = app.browser();
     for (let i = 0; i < 5; i++) {
-      expect(refusal(await app.browser().recover(name, OTHER_WRONG_CODE)).status).toBe(400);
+      expect(refusal(await device.recover(name, OTHER_WRONG_CODE)).status).toBe(400);
     }
 
-    expect(refusal(await app.browser().recover(name, recoveryCodes[0]!)).status).toBe(400);
+    expect(refusal(await device.recover(name, recoveryCodes[0]!)).status).toBe(400);
     now += HOUR + 1;
-    expect((await app.browser().recover(name, recoveryCodes[0]!)).result).toBe("ok");
+    expect((await device.recover(name, recoveryCodes[0]!)).result).toBe("ok");
   });
 
-  it("counts a successful recovery once against the record's attempts", async () => {
+  it("counts a successful recovery once against the record's attempts from its source", async () => {
     const app = testApp();
     const name = uniqueName();
     const { recoveryCodes } = await app.browser().register(name);
-    expect((await app.browser().recover(name, recoveryCodes[0]!)).result).toBe("ok");
+    const device = app.browser();
+    expect((await device.recover(name, recoveryCodes[0]!)).result).toBe("ok");
     for (let i = 0; i < 3; i++) {
-      expect(refusal(await app.browser().recover(name, OTHER_WRONG_CODE)).status).toBe(400);
+      expect(refusal(await device.recover(name, OTHER_WRONG_CODE)).status).toBe(400);
     }
 
-    expect((await app.browser().recover(name, recoveryCodes[1]!)).result).toBe("ok");
-    expect(refusal(await app.browser().recover(name, recoveryCodes[2]!)).status).toBe(400);
+    expect((await device.recover(name, recoveryCodes[1]!)).result).toBe("ok");
+    expect(refusal(await device.recover(name, recoveryCodes[2]!)).status).toBe(400);
   });
 
   it("finds a name typed without its accents or capitals", async () => {
@@ -315,15 +317,30 @@ describe("a refused recovery attempt", () => {
     expect(await indexedRecord(app.storagePrefix, attacker.authenticator.credentials[0]!.id)).toBeNull();
   });
 
-  it("once the record is throttled, binds no label even for a right code", async () => {
+  it("from one source does not throttle the record for another source", async () => {
     const app = testApp();
     const name = uniqueName();
     const { recordId, recoveryCodes } = await app.browser().register(name);
+    const attacker = app.browser();
     for (let i = 0; i < 5; i++) {
-      expect(refusal(await app.browser().recover(name, WRONG_CODE)).status).toBe(400);
+      expect(refusal(await attacker.recover(name, WRONG_CODE)).status).toBe(400);
+    }
+
+    const recovered = await app.browser().recover(name, recoveryCodes[0]!);
+
+    expect(recovered.result).toBe("ok");
+    expect(await failureCausesOn(app.storagePrefix, recordId)).not.toContain("recovery-throttled");
+  });
+
+  it("once the record is throttled for a source, binds no label even for a right code from it", async () => {
+    const app = testApp();
+    const name = uniqueName();
+    const { recordId, recoveryCodes } = await app.browser().register(name);
+    const device = app.browser();
+    for (let i = 0; i < 5; i++) {
+      expect(refusal(await device.recover(name, WRONG_CODE)).status).toBe(400);
     }
     const labelsBefore = await labelRows(app.storagePrefix, recordId);
-    const device = app.browser();
 
     const refused = refusal(await device.recover(name, recoveryCodes[0]!));
 

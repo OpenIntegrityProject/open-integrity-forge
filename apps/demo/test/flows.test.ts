@@ -66,6 +66,28 @@ describe("the demo's flows", () => {
     ).toEqual({ result: "told", message: ALREADY_REGISTERED, declined: true });
   });
 
+  it("tell a passkey the page lacked focus for to press again, not as declined", async () => {
+    const notFocused: Partial<Authenticator> = { create: async () => ({ result: "not-focused" }) };
+    const { app, operator, person, personName, personId } = await signedIn();
+    await operator.stepUp();
+    const { link } = await operator.json(operator.post("/operator/rebind-links", { recordId: personId }));
+    const pressAgain = (message: string) => ({ result: "told", message, declined: false });
+
+    // The person's session has not stepped up, so adding a passkey steps up first.
+    expect(await flowsOn(person, notFocused).addPasskey()).toEqual(
+      pressAgain("Step-up done. Press the Add a passkey button again."),
+    );
+    expect(await flowsOn(app.browser(), notFocused).register(uniqueName())).toEqual(
+      pressAgain("The page was not ready for a passkey. Press Register with a passkey again."),
+    );
+    expect(await flowsOn(app.browser(), notFocused).recover(personName, "ur:seed/unused")).toEqual(
+      pressAgain("The page was not ready for a passkey. Press Recover with a new passkey again."),
+    );
+    expect(await flowsOn(app.browser(), notFocused).rebind(new URL(link).hash.slice(1))).toEqual(
+      pressAgain("The page was not ready for a passkey. Press Create a passkey again."),
+    );
+  });
+
   it("tell Continue that used no passkey from one that was not accepted", async () => {
     const app = testApp();
     const browser = app.browser();
@@ -188,5 +210,23 @@ describe("the demo's flows", () => {
 
     expect(found).toMatchObject({ result: "member", member: { memberName: personName, recordId: personId }, note: "" });
     expect(await flowsOn(operator).lookUpMember(uniqueName())).toEqual({ result: "noted", note: "No such member" });
+  });
+
+  it("tell a revoked passkey's holder to delete it from their security key, or else their password manager", async () => {
+    const revokeFrom = async (browser: Browser) => {
+      await browser.register(uniqueName());
+      await browser.stepUp();
+      await browser.enrol();
+      const label = (await browser.client.credentials())[0]!.label;
+      return flowsOn(browser).revoke(label);
+    };
+    const app = testApp();
+
+    expect(await revokeFrom(app.browser({ transports: ["usb"] }))).toMatchObject({
+      message: expect.stringMatching(/^Revoked .+\. Delete '.+' from your security key too; it no longer logs in\.$/),
+    });
+    expect(await revokeFrom(app.browser())).toMatchObject({
+      message: expect.stringMatching(/ from your password manager too; /),
+    });
   });
 });

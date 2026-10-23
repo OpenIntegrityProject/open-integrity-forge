@@ -16,7 +16,7 @@
     "RP_ID": "passkeydemo.gordianstack.com",
     "RP_NAME": "Gordian Stack passkey demo",
     "ORIGIN": "https://passkeydemo.gordianstack.com",
-    "REFUSAL_FLOOR_MS": "800"
+    "REFUSAL_FLOOR_MS": "1050"
   },
   "durable_objects": {
     "bindings": [

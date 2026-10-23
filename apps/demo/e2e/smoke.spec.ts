@@ -12,14 +12,15 @@ const NO_PASSKEY_USED =
 /**
  * Give the page a virtual authenticator; returns what reaches it over CDP.
  * Its passkeys are device-bound (BE=0) unless `synced`, as a password manager's would be.
+ * It is the platform's own (`internal`) unless given another transport, such as a security key's `usb`.
  */
-async function addAuthenticator(page: Page, { synced = false } = {}) {
+async function addAuthenticator(page: Page, { synced = false, transport = "internal" } = {}) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
     options: {
       protocol: "ctap2",
-      transport: "internal",
+      transport,
       hasResidentKey: true,
       hasUserVerification: true,
       isUserVerified: true,
@@ -809,6 +810,25 @@ test("settings suggest no other passkey when the record's passkeys are synced", 
   await expect(page.locator("#credential-rows tr td").nth(2)).toHaveText("yes");
   await expect(page.locator("#device-bound-notice")).toHaveCount(1);
   await expect(page.locator("#device-bound-notice")).toBeHidden();
+});
+
+test("settings show a passkey on a security key as held by a security key, and one they cannot name as unknown", async ({
+  page,
+  browser,
+}) => {
+  await addAuthenticator(page, { transport: "usb" });
+  await registerMember(page, `Key${Date.now().toString(36)}`);
+  await openSettings(page);
+  await expect(page.locator("#credential-rows tr")).toHaveCount(1);
+  await expect(page.locator("#credential-rows tr td").nth(1)).toHaveText("Security key");
+
+  const platform = await (await browser.newContext()).newPage();
+  await addAuthenticator(platform);
+  await registerMember(platform, `Platform${Date.now().toString(36)}`);
+  await openSettings(platform);
+  await expect(platform.locator("#credential-rows tr")).toHaveCount(1);
+  await expect(platform.locator("#credential-rows tr td").nth(1)).toHaveText("unknown");
+  await platform.context().close();
 });
 
 test("log out everywhere else steps up, then leaves only this session", async ({ page, browser }) => {

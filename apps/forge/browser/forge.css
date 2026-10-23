@@ -1264,9 +1264,13 @@ button.copy[data-copied]:hover:enabled {
   margin-top: 2rem;
   text-align: right;
 }
-/* The story moves the focus to these regions. The spotlight outline shows them, in place of a focus ring. */
-:where(#history, .region, .outside):where(:focus) {
+/* The story moves the focus to these regions. The spotlight outline shows them, in place of a focus ring, unless the keyboard is in use. */
+:where(#history, .region, .outside):where(:focus:not(:focus-visible)) {
   outline: none;
+}
+:where(#history, .region, .outside):where(:focus-visible) {
+  outline: 2px solid var(--seal);
+  outline-offset: 4px;
 }
 .spotlight {
   outline: 3px solid color-mix(in srgb, var(--seal) 55%, transparent);

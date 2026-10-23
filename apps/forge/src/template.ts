@@ -19,9 +19,9 @@ lists the keys it trusts:
 
 The first commit of \`main\` is the root of trust. Its id is the id of this
 repository, and its decentralized identifier is \`did:repo:\` followed by that
-id: the same on every host and in every clone. Each later commit is checked against the policy of its first
-parent, so a commit cannot change the rules it obeys, and a key can never
-authorize itself.
+id: the same on every host and in every clone. Each later commit is checked
+against the policy of its first parent, so a commit cannot change the rules it
+obeys, and a key can never authorize itself.
 
 To check it with no server, on any clone, with Node 22 or later:
 

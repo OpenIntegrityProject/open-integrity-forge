@@ -12,7 +12,7 @@ import {
 import { createApp, type AppOptions } from "../../demo/src/app.ts";
 import { error, json } from "../../demo/src/http.ts";
 import { operatorLog, type OperatorLogEntry } from "../../demo/src/operator-log.ts";
-import { listFrom } from "../../demo/src/operator.ts";
+import { operatorRolesFromSecret, type OperatorRoles } from "../../demo/src/operator.ts";
 import { localGitHttp } from "./local-git-http.ts";
 import type { Result } from "./project.ts";
 import { keyFromRegistration } from "./promoter-key.ts";
@@ -40,6 +40,8 @@ interface Call {
   body: any;
   params: string[];
   storagePrefix: string | undefined;
+  /** Who holds the operator role, as the demo app decides it. */
+  roles: OperatorRoles;
 }
 
 type Route = { method: "GET" | "POST"; pattern: RegExp; handler: (call: Call) => Promise<Response> };
@@ -87,11 +89,20 @@ async function owned(call: Call) {
 }
 
 /**
- * A refusal unless the caller holds the operator role, which the
- * `OPERATOR_RECORD_IDS` secret grants here as in the demo app.
+ * The first steps of the demo app's operator pipeline, for the forge's own
+ * operator routes: the operator role, then a step-up. A route then finds its
+ * target, logs the action, and only then does it.
  */
-function notOperator(call: Call): Response | null {
-  return listFrom(call.env.OPERATOR_RECORD_IDS).includes(call.principal.recordId) ? null : error(403, "not an operator");
+async function steppedUpOperator(call: Call): Promise<Response | null> {
+  if (!(await call.roles.isOperator(call.principal.recordId))) return error(403, "not an operator");
+  await call.passkeys.requireStepUp(call.passkeys.context(call.request), sessionValueFrom(call.request));
+  return null;
+}
+
+/** Log an operator action before it is done. The demo's log names its own actions; these are the forge's, so the type widens here. */
+async function logOperator(call: Call, action: "list-projects" | "delete-project", targetId: RecordId): Promise<void> {
+  const logged = action as OperatorLogEntry["action"];
+  await operatorLog(call.env.OPERATOR_LOG, call.storagePrefix)().append({ operatorId: call.principal.recordId, action: logged, targetId, at: Date.now() });
 }
 
 async function allowPrepare(call: Call): Promise<Response | null> {
@@ -362,11 +373,13 @@ const ROUTES: Route[] = [
   },
   {
     // Every project, whoever owns it, so an operator can find the ones left behind, such as a project whose repository is gone.
-    method: "GET",
+    // It names every owner, so it asks for a step-up and is logged against the operator.
+    method: "POST",
     pattern: /^\/forge\/operator\/projects$/,
     async handler(call) {
-      const refused = notOperator(call);
+      const refused = await steppedUpOperator(call);
       if (refused) return refused;
+      await logOperator(call, "list-projects", call.principal.recordId);
       // Ask every project at once: each one that has been quiet can take seconds to answer.
       const listed = await Promise.all(
         (await repoIndex(call.env).projects()).map(async ({ projectId }): Promise<OperatorProject | null> => {
@@ -382,16 +395,13 @@ const ROUTES: Route[] = [
     method: "POST",
     pattern: new RegExp(`^/forge/operator/projects/${PROJECT_ID}/reset$`),
     async handler(call) {
-      const refused = notOperator(call);
+      const refused = await steppedUpOperator(call);
       if (refused) return refused;
       const id = call.params[0]!;
       const stub = project(call.env, id);
       const owner = await stub.owner();
       if (!owner || !isRecordId(owner)) return refusal(404, NOT_FOUND);
-      await call.passkeys.requireStepUp(call.passkeys.context(call.request), sessionValueFrom(call.request));
-      // The demo's log names its own actions; this one is the forge's, so its type widens here.
-      const action = "delete-project" as OperatorLogEntry["action"];
-      await operatorLog(call.env.OPERATOR_LOG, call.storagePrefix)().append({ operatorId: call.principal.recordId, action, targetId: owner, at: Date.now() });
+      await logOperator(call, "delete-project", owner);
       await stub.reset();
       await person(call.env, owner).removeProject(id);
       return json({ ok: true });
@@ -402,6 +412,7 @@ const ROUTES: Route[] = [
 /** The forge Worker: /forge/* here, everything else to the demo app. */
 export function createForge(options: ForgeOptions = {}) {
   const demo = createApp(options);
+  const roles = options.operatorRoles ?? operatorRolesFromSecret;
   return {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
       const url = new URL(request.url);
@@ -417,8 +428,11 @@ export function createForge(options: ForgeOptions = {}) {
         rp: { id: env.RP_ID, name: env.RP_NAME, origin: env.ORIGIN },
         refusalFloorMs: Number(env.REFUSAL_FLOOR_MS),
         clock: options.clock,
+        sessionLifetimeMs: options.sessionLifetimeMs,
+        onRevoke: options.onRevoke,
         rateLimits: options.rateLimits,
         storagePrefix: options.storagePrefix,
+        sourceOf: options.sourceOf,
       });
       const principal = await passkeys.authenticate(sessionValueFrom(request));
       if (!principal) return error(401, "not logged in");
@@ -434,7 +448,9 @@ export function createForge(options: ForgeOptions = {}) {
       }
       const params = route.pattern.exec(url.pathname)!.slice(1);
       try {
-        return await route.handler({ request, env, passkeys, principal, body, params, storagePrefix: options.storagePrefix });
+        const log = operatorLog(env.OPERATOR_LOG, options.storagePrefix);
+        const operatorRoles = roles({ request, env, passkeys, ctx: passkeys.context(request), body, log });
+        return await route.handler({ request, env, passkeys, principal, body, params, storagePrefix: options.storagePrefix, roles: operatorRoles });
       } catch (e) {
         if (e instanceof PasskeyError) return error(e.code === "step-up-required" ? 403 : 401, e.code);
         throw e;

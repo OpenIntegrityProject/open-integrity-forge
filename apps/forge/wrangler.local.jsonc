@@ -22,7 +22,7 @@
     "RP_ID": "localhost",
     "RP_NAME": "Open Integrity Forge Demo (local)",
     "ORIGIN": "http://localhost:8787",
-    "REFUSAL_FLOOR_MS": "800",
+    "REFUSAL_FLOOR_MS": "1050",
     "REPO_HOST": "local",
     "AGENT_KEY_TTL_S": "3600",
     "FORK_TOKEN_TTL_S": "900",

@@ -14,6 +14,28 @@ export interface Call {
 
 export type Handler = (call: Call) => Promise<Response>;
 
+/**
+ * A POST route, and whether it acts only on the caller's own session. The
+ * Origin check guards against cross-site request forgery, which rides on the
+ * cookie a browser attaches by itself. A browser never attaches a bearer header
+ * on its own, so a bearer-only request to an own-session route skips the check;
+ * on every other route it is checked like a cookie request.
+ */
+export interface PostRoute {
+  handler: Handler;
+  ownSession: boolean;
+}
+
+/** A route every POST reaches only from the site's origin, bearer-only or not. */
+export function originChecked(handler: Handler): PostRoute {
+  return { handler, ownSession: false };
+}
+
+/** A route that acts on the caller's own session, which a bearer-only request reaches without an Origin. */
+export function ownSession(handler: Handler): PostRoute {
+  return { handler, ownSession: true };
+}
+
 export function json(value: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");

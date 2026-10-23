@@ -4,15 +4,21 @@ import { CHALLENGE_LIFETIME_MS, challengeStores } from "./app-tier/challenges.ts
 import { providerName } from "./app-tier/aaguid-names.ts";
 import { credentialLabels, parseLabel, randomLabel } from "./app-tier/labels.ts";
 import { memberNameRegistry } from "./app-tier/member-names.ts";
+import { missingSourceWarning } from "./app-tier/missing-source-warning.ts";
 import { isValidMemberName, memberNameKey } from "./member-name-rules.ts";
 import { DEFAULT_RATE_LIMITS, rateLimiters, type Limit, type RateLimits } from "./app-tier/rate-limit.ts";
 import { credentialBinding } from "./credential-binding.ts";
+import type { CeremonyFailure } from "./failures.ts";
 import type { PasskeyBindings } from "./durable-objects.ts";
 import { sha256Hex, toBase64Url } from "./encoding.ts";
 import { credentialIndex } from "./identity/credential-index.ts";
 import { relyingPartyMatch, relyingPartyMatches } from "./identity/relying-party-matches.ts";
+import { sessionCookie } from "./http.ts";
 import {
   identityRecords,
+  DAY_MS,
+  MAX_SESSION_LIFETIME_MS,
+  SESSION_LIFETIME_MS,
   type Principal,
   type RecordSummary,
   type SessionCause,
@@ -49,6 +55,12 @@ export interface PasskeyConfig {
   refusalFloorMs: number;
   /** Source of the current time. Defaults to `Date.now`. */
   clock?: () => number;
+  /**
+   * How long a session lasts from the ceremony that starts it, used or not, in
+   * whole milliseconds. Defaults to `SESSION_LIFETIME_MS` (7 days); at most
+   * `MAX_SESSION_LIFETIME_MS` (30 days). Nothing extends a session.
+   */
+  sessionLifetimeMs?: number;
   /** Overrides for the per-source and global rate limits. */
   rateLimits?: Partial<RateLimits>;
   /**
@@ -64,6 +76,15 @@ export interface PasskeyConfig {
    * var or secret, so a deploy setting cannot point the app at other storage.
    */
   storagePrefix?: string;
+  /**
+   * The source address of a request, which every per-source rate limit keys
+   * on. Defaults to the `CF-Connecting-IP` header, which Cloudflare's edge
+   * sets. Set it when that header does not reach the app, such as behind a
+   * Worker that rebuilds the request or on self-hosted workerd behind a
+   * reverse proxy. When it returns null or an empty string, every ceremony and
+   * every options request is refused.
+   */
+  sourceOf?: (request: Request) => string | null;
 }
 
 export interface RevocationEvent {
@@ -76,7 +97,8 @@ export interface RevocationEvent {
 export interface RequestContext {
   startedAt: number;
   now: number;
-  sourceIp: string;
+  /** The request's source address, or null when `sourceOf` named none. */
+  sourceIp: string | null;
   userAgent: string;
 }
 
@@ -115,7 +137,10 @@ export interface CredentialListing {
   label: string;
   createdAt: number;
   lastUsedAt: number | null;
-  /** The password manager that holds the passkey, where its AAGUID is known. */
+  /**
+   * What holds the passkey: the password manager its AAGUID names, else
+   * `SECURITY_KEY` when its transports are all roaming ones.
+   */
   provider: string | null;
   backupEligible: boolean;
   backedUp: boolean;
@@ -124,7 +149,7 @@ export interface CredentialListing {
 export interface RevokedPasskey {
   /** The entry the password manager still shows for the revoked passkey. */
   passkeyName: string;
-  /** The password manager that holds that entry, where its AAGUID is known. */
+  /** What holds that entry, as `CredentialListing.provider` names it. */
   provider: string | null;
   /** The revoked credential's ID, base64url, for the browser to signal as unknown. */
   credentialId: string;
@@ -134,6 +159,16 @@ export interface RevokedPasskey {
 
 export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig) {
   const clock = config.clock ?? Date.now;
+  const sessionLifetimeMs = config.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
+  const lifetimeAllowed = sessionLifetimeMs > 0 && sessionLifetimeMs <= MAX_SESSION_LIFETIME_MS;
+  if (!Number.isSafeInteger(sessionLifetimeMs) || !lifetimeAllowed) {
+    throw new RangeError(
+      `sessionLifetimeMs must be a whole number of milliseconds, above 0 and at most ` +
+        `${MAX_SESSION_LIFETIME_MS / DAY_MS} days ` +
+        `(${MAX_SESSION_LIFETIME_MS}), not ${sessionLifetimeMs}`,
+    );
+  }
+  const sourceOf = config.sourceOf ?? ((request: Request) => request.headers.get("CF-Connecting-IP"));
   const limits: RateLimits = { ...DEFAULT_RATE_LIMITS, ...config.rateLimits };
   const revoked = async (event: RevocationEvent) => {
     await config.onRevoke?.(event);
@@ -173,21 +208,68 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
     throw new CeremonyRefusal("rp-id-changed");
   }
 
-  /** Run `run` within a per-source limit. Past the limit, the uniform refusal. */
-  async function withinSourceLimit<T>(
-    ctx: RequestContext,
-    bucket: string,
-    limit: Limit,
-    run: () => Promise<T>,
-  ): Promise<CeremonyOutcome<T>> {
-    const sourceHash = await sha256Hex(`source:${ctx.sourceIp}`);
+  /**
+   * Whether the request has a source address. When it has none, every
+   * per-source limit would be shared by every caller, so the request is to be
+   * refused; the first such request on each isolate logs why.
+   */
+  function sourceKnown(ctx: RequestContext, ceremony: Ceremony): boolean {
+    if (ctx.sourceIp) return true;
+    if (!missingSourceWarning.logged) {
+      missingSourceWarning.logged = true;
+      console.error(
+        `passkey ${ceremony} refused: the request has no source address, so every ceremony and options request is refused; set sourceOf in the passkey config to read it`,
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Record a refused ceremony's cause, on the record once `trail` names one,
+   * otherwise globally. A failure to record is logged, never thrown.
+   */
+  async function recordFailure(trail: Trail, failure: CeremonyFailure) {
     try {
-      await throttle(`${bucket}:${sourceHash}`, limit, ctx.now);
+      if (trail.recordId) await record(trail.recordId).recordFailure(failure);
+      else await failures().record(failure);
     } catch (error) {
-      if (!(error instanceof CeremonyRefusal)) throw error;
+      console.error("passkey ceremony failure not recorded", error);
+    }
+  }
+
+  /**
+   * Issue a ceremony's options, within a per-source limit when given one.
+   * Past the limit, the uniform refusal, unrecorded: options are what a flood
+   * hits first, and recording each would add a write per flood request. With
+   * no source address, the uniform refusal, unrecorded too, since every
+   * request on such a deployment is refused the same way. Any
+   * unexpected error is recorded as `options-internal-error` (on the record
+   * once `run` has named one in `trail`) and becomes the uniform refusal too,
+   * no sooner than the refusal floor. A PasskeyError passes through.
+   */
+  async function issueOptions<T>(
+    ctx: RequestContext,
+    ceremony: Ceremony,
+    sourceLimit: { bucket: string; limit: Limit } | null,
+    run: (trail: Trail) => Promise<T>,
+  ): Promise<CeremonyOutcome<T>> {
+    if (!sourceKnown(ctx, ceremony)) {
       return { ok: false, response: await uniformRefusal(ctx.startedAt, config.refusalFloorMs) };
     }
-    return { ok: true, value: await run() };
+    const sourceHash = await sha256Hex(`source:${ctx.sourceIp}`);
+    const trail: Trail = {};
+    try {
+      // Not `throttle`, whose refusal would be recorded below.
+      if (sourceLimit && !(await limiter(`${sourceLimit.bucket}:${sourceHash}`).hit(sourceLimit.limit, ctx.now))) {
+        return { ok: false, response: await uniformRefusal(ctx.startedAt, config.refusalFloorMs) };
+      }
+      return { ok: true, value: await run(trail) };
+    } catch (error) {
+      if (error instanceof PasskeyError) throw error;
+      console.error(`passkey ${ceremony} options failed; refusing them`, error);
+    }
+    await recordFailure(trail, { ceremony, cause: "options-internal-error", at: ctx.now, sourceHash });
+    return { ok: false, response: await uniformRefusal(ctx.startedAt, config.refusalFloorMs) };
   }
 
   /**
@@ -200,21 +282,21 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
   async function runCeremony<T>(
     ctx: RequestContext,
     ceremony: Ceremony,
-    run: (trail: Trail) => Promise<T>,
+    run: (trail: Trail, sourceHash: string) => Promise<T>,
   ): Promise<CeremonyOutcome<T>> {
-    const sourceHash = await sha256Hex(`source:${ctx.sourceIp}`);
+    // With no source address, the hash of an empty one, which the refusal is recorded under.
+    const sourceHash = await sha256Hex(`source:${ctx.sourceIp ?? ""}`);
     const trail: Trail = {};
     let cause: string;
     try {
-      // First, so that a ceremony refused for its RP ID writes nothing but its failure.
+      // Before any Durable Object call, since every per-source throttle needs the source.
+      if (!sourceKnown(ctx, ceremony)) throw new CeremonyRefusal("source-unknown");
+      // First of the calls, so that a ceremony refused for its RP ID writes nothing but its failure.
       await checkRelyingParty(ceremony);
       await throttle(`ceremony:${sourceHash}`, limits.ceremonyPerSource, ctx.now);
       if (ANONYMOUS_CEREMONIES.has(ceremony)) await throttle("ceremony:global", limits.ceremonyGlobal, ctx.now);
-      if (ceremony === "recover") {
-        await throttle(`recover:${sourceHash}`, limits.recoverPerSource, ctx.now);
-        await throttle("recover:global", limits.recoverGlobal, ctx.now);
-      }
-      return { ok: true, value: await run(trail) };
+      if (ceremony === "recover") await throttle(`recover:${sourceHash}`, limits.recoverPerSource, ctx.now);
+      return { ok: true, value: await run(trail, sourceHash) };
     } catch (error) {
       if (error instanceof PasskeyError) throw error;
       if (error instanceof CeremonyRefusal) {
@@ -224,19 +306,17 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
         cause = "internal-error";
       }
     }
-    const failure = { ceremony, cause, at: ctx.now, sourceHash };
-    try {
-      if (trail.recordId) await record(trail.recordId).recordFailure(failure);
-      else await failures().record(failure);
-    } catch (error) {
-      console.error("passkey ceremony failure not recorded", error);
-    }
+    await recordFailure(trail, { ceremony, cause, at: ctx.now, sourceHash });
     return { ok: false, response: await uniformRefusal(ctx.startedAt, config.refusalFloorMs) };
   }
 
   /** Issue options for an anonymous ceremony, within the per-source limit. */
-  function anonymousOptions<T>(ctx: RequestContext, issue: () => Promise<T>): Promise<CeremonyOutcome<T>> {
-    return withinSourceLimit(ctx, "options", limits.optionsPerSource, issue);
+  function anonymousOptions<T>(
+    ctx: RequestContext,
+    ceremony: Ceremony,
+    issue: () => Promise<T>,
+  ): Promise<CeremonyOutcome<T>> {
+    return issueOptions(ctx, ceremony, { bucket: "options", limit: limits.optionsPerSource }, issue);
   }
 
   /**
@@ -345,6 +425,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
         tokenHash: minted.tokenHash,
         userAgent: ctx.userAgent,
         userVerified: isUserVerified(flags),
+        lifetimeMs: sessionLifetimeMs,
       },
     };
   }
@@ -355,17 +436,22 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
       return {
         startedAt: Date.now(),
         now,
-        sourceIp: request.headers.get("CF-Connecting-IP") ?? "unknown",
+        sourceIp: sourceOf(request) || null,
         userAgent: (request.headers.get("User-Agent") ?? "").slice(0, 256),
       };
     },
 
+    /** The cookie for a session this deployment minted, whose `Max-Age` is the configured session lifetime. */
+    sessionCookie(value: string): string {
+      return sessionCookie(value, sessionLifetimeMs);
+    },
+
     /**
      * Whether a member name is free to register, within the per-source limit.
-     * Past the limit, the uniform refusal.
+     * Past the limit, or on a server failure, the uniform refusal.
      */
     async checkMemberName(ctx: RequestContext, name: string): Promise<CeremonyOutcome<boolean>> {
-      return withinSourceLimit(ctx, "name-check", limits.nameCheckPerSource, () =>
+      return issueOptions(ctx, "register", { bucket: "name-check", limit: limits.nameCheckPerSource }, () =>
         isMemberNameAvailable(name, ctx.now),
       );
     },
@@ -376,7 +462,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
 
     /** Options for registering a member name, within the per-source limit. */
     async registrationOptions(ctx: RequestContext, typedName: string) {
-      return anonymousOptions(ctx, async () => {
+      return anonymousOptions(ctx, "register", async () => {
         if (!(await isMemberNameAvailable(typedName, ctx.now))) throw new PasskeyError("member-name-unavailable");
         const memberName = typedName.normalize("NFC");
         const label = randomLabel();
@@ -423,7 +509,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
 
     /** Options for logging in, within the per-source limit. */
     async loginOptions(ctx: RequestContext) {
-      return anonymousOptions(ctx, async () => {
+      return anonymousOptions(ctx, "login", async () => {
         const challenge = await issueChallenge("login", {}, ctx.now);
         return requestOptions({ rp: config.rp, challenge });
       });
@@ -487,15 +573,18 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
     },
 
     async stepUpOptions(ctx: RequestContext, sessionValue: string | null | undefined) {
-      const presented = await presentedSession(sessionValue);
-      const found = await record(presented.recordId).credentialDescriptors(presented.tokenHash, ctx.now, "live");
-      if (!found.ok) throw new PasskeyError(found.cause);
-      const challenge = await issueChallenge(
-        "step-up",
-        { recordId: presented.recordId, sessionId: found.sessionId },
-        ctx.now,
-      );
-      return requestOptions({ rp: config.rp, challenge, allowCredentials: found.descriptors });
+      return issueOptions(ctx, "step-up", null, async (trail) => {
+        const presented = await presentedSession(sessionValue);
+        const found = await record(presented.recordId).credentialDescriptors(presented.tokenHash, ctx.now, "live");
+        if (!found.ok) throw new PasskeyError(found.cause);
+        trail.recordId = presented.recordId;
+        const challenge = await issueChallenge(
+          "step-up",
+          { recordId: presented.recordId, sessionId: found.sessionId },
+          ctx.now,
+        );
+        return requestOptions({ rp: config.rp, challenge, allowCredentials: found.descriptors });
+      });
     },
 
     /** Prove control of one of the record's passkeys again, on this session. */
@@ -529,25 +618,32 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
      * steers where the browser offers to save it.
      */
     async enrolOptions(ctx: RequestContext, sessionValue: string | null | undefined, hint?: PublicKeyCredentialHint) {
-      const presented = await presentedSession(sessionValue);
-      // The record gates first, so that a refused session mints no label.
-      const found = await record(presented.recordId).credentialDescriptors(presented.tokenHash, ctx.now, "stepped-up");
-      if (!found.ok) throw new PasskeyError(found.cause);
-      const [label, memberName] = await Promise.all([
-        labels(presented.recordId).mint(ctx.now),
-        names().nameOf(presented.recordId),
-      ]);
-      const challenge = await issueChallenge(
-        "enrol",
-        { recordId: presented.recordId, sessionId: found.sessionId, label },
-        ctx.now,
-      );
-      return creationOptions({
-        rp: config.rp,
-        challenge,
-        userName: passkeyName(memberName ?? presented.recordId, label),
-        excludeCredentials: found.descriptors,
-        hint,
+      return issueOptions(ctx, "enrol", null, async (trail) => {
+        const presented = await presentedSession(sessionValue);
+        // The record gates first, so that a refused session mints no label.
+        const found = await record(presented.recordId).credentialDescriptors(
+          presented.tokenHash,
+          ctx.now,
+          "stepped-up",
+        );
+        if (!found.ok) throw new PasskeyError(found.cause);
+        trail.recordId = presented.recordId;
+        const [label, memberName] = await Promise.all([
+          labels(presented.recordId).mint(ctx.now),
+          names().nameOf(presented.recordId),
+        ]);
+        const challenge = await issueChallenge(
+          "enrol",
+          { recordId: presented.recordId, sessionId: found.sessionId, label },
+          ctx.now,
+        );
+        return creationOptions({
+          rp: config.rp,
+          challenge,
+          userName: passkeyName(memberName ?? presented.recordId, label),
+          excludeCredentials: found.descriptors,
+          hint,
+        });
       });
     },
 
@@ -597,7 +693,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
         label: byCredential[row.id]!,
         createdAt: row.createdAt,
         lastUsedAt: row.lastUsedAt,
-        provider: providerName(row.aaguid),
+        provider: providerName(row.aaguid, row.transports),
         backupEligible: row.backupEligible,
         backedUp: row.backedUp,
       }));
@@ -606,9 +702,9 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
     /**
      * Revoke the passkey with this label, typed in any form `parseLabel`
      * reads. The last passkey cannot be revoked. Returns the dead entry as
-     * the password manager shows it, that password manager where its AAGUID
-     * is known, and the credential ID and RP ID the browser needs to tell the
-     * password manager the passkey is gone.
+     * the password manager shows it, what holds it where that is known, and
+     * the credential ID and RP ID the browser needs to tell the password
+     * manager the passkey is gone.
      */
     async revokeCredential(
       ctx: RequestContext,
@@ -631,7 +727,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
       await labels(session.recordId).retire(label, ctx.now);
       return {
         passkeyName: passkeyName(memberName ?? session.recordId, label),
-        provider: providerName(done.aaguid),
+        provider: providerName(done.aaguid, done.transports),
         credentialId,
         rpId: config.rp.id,
       };
@@ -657,7 +753,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
      * nothing, as at registration.
      */
     async recoverOptions(ctx: RequestContext, memberName: string) {
-      return anonymousOptions(ctx, async () => {
+      return anonymousOptions(ctx, "recover", async () => {
         if (!isValidMemberName(memberName)) throw new PasskeyError("not-found");
         const recordId = await names().resolve(memberName);
         const label = randomLabel();
@@ -672,7 +768,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
      * request. Returns how many unused recovery codes the record has left.
      */
     async recover(ctx: RequestContext, memberName: string, code: string, response: RegistrationResponseJSON) {
-      return runCeremony(ctx, "recover", async (trail) => {
+      return runCeremony(ctx, "recover", async (trail, sourceHash) => {
         const { challenge, payload } = await consumeChallenge<{
           memberName: string;
           recordId: RecordId | null;
@@ -689,7 +785,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
         // Checked before the passkey is verified or bound, so that a throttled
         // or wrong-code attempt writes nothing but its count: binding first
         // would burn a label on the record for every refused attempt.
-        const checked = await record(recordId).checkRecoveryAttempt({ codeHash, now: ctx.now });
+        const checked = await record(recordId).checkRecoveryAttempt({ codeHash, sourceHash, now: ctx.now });
         if (!checked.ok) throw new CeremonyRefusal(checked.cause);
         const credential = await verifyRegistration(response, { rp: config.rp, challenge });
         return bindNewCredential({
@@ -771,7 +867,7 @@ export function createPasskeys(bindings: PasskeyBindings, config: PasskeyConfig)
      * given a second (ADR 0008).
      */
     async rebindOptions(ctx: RequestContext, link: string) {
-      return anonymousOptions(ctx, async () => {
+      return anonymousOptions(ctx, "rebind", async () => {
         const parsed = await parseRecordToken(typeof link === "string" ? link : "");
         const descriptors = parsed ? await record(parsed.recordId).rebindDescriptors(parsed.tokenHash, ctx.now) : null;
         const memberName = parsed && descriptors ? await names().nameOf(parsed.recordId) : null;

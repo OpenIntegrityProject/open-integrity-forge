@@ -6,3 +6,5 @@ export { encodeCbor } from "./cbor.ts";
 export { labelDraws } from "../app-tier/label-draws.ts";
 // The RP IDs this isolate has seen match their stored one, exported so a test can clear it.
 export { relyingPartyMatches } from "../identity/relying-party-matches.ts";
+// Whether this isolate has logged a request with no source address, exported so a test can reset it.
+export { missingSourceWarning } from "../app-tier/missing-source-warning.ts";

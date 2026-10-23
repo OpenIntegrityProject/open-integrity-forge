@@ -71,7 +71,113 @@ describe("a server failure inside a ceremony", () => {
   });
 });
 
-describe("anonymous options past the per-source limit get the uniform refusal", () => {
+describe("a server failure while issuing options", () => {
+  interface OptionsFailure {
+    method: string;
+    /** The bindings that make one of the method's Durable Object calls throw. */
+    failing: () => Partial<Env>;
+    request: (browser: Browser, recordId: string) => Promise<Response>;
+    ceremony: string;
+    /** Registered first, and stepped up when asked. */
+    signedIn?: "live" | "stepped-up";
+    /** Recorded on the registered record, not in the global log. */
+    onRecord?: boolean;
+  }
+
+  /** The answer the Workers runtime would serve: an error the app lets escape is a 500. */
+  async function served(response: Promise<Response>): Promise<Response> {
+    try {
+      return await response;
+    } catch {
+      return new Response(null, { status: 500 });
+    }
+  }
+
+  const failures: OptionsFailure[] = [
+    {
+      method: "registrationOptions",
+      failing: () => ({ CHALLENGES: rejecting(env.CHALLENGES, "issue") }),
+      request: (browser) => browser.post("/auth/register/options", { memberName: uniqueName() }),
+      ceremony: "register",
+    },
+    {
+      method: "checkMemberName",
+      failing: () => ({ MEMBER_NAMES: rejecting(env.MEMBER_NAMES, "isAvailable") }),
+      request: (browser) => browser.get(`/auth/member-name?name=${uniqueName()}`),
+      ceremony: "register",
+    },
+    {
+      method: "loginOptions",
+      failing: () => ({ CHALLENGES: rejecting(env.CHALLENGES, "issue") }),
+      request: (browser) => browser.post("/auth/login/options"),
+      ceremony: "login",
+    },
+    {
+      method: "recoverOptions",
+      failing: () => ({ MEMBER_NAMES: rejecting(env.MEMBER_NAMES, "resolve") }),
+      request: (browser) => browser.post("/auth/recover/options", { memberName: uniqueName() }),
+      ceremony: "recover",
+    },
+    {
+      method: "rebindOptions",
+      failing: () => ({ IDENTITY_RECORDS: rejecting(env.IDENTITY_RECORDS, "rebindDescriptors") }),
+      // A well-formed link, so the record is asked for it; before it is proved, the failure is recorded globally.
+      request: (browser, recordId) => browser.post("/auth/rebind/options", { link: `${recordId}.${"A".repeat(43)}` }),
+      ceremony: "rebind",
+      signedIn: "live",
+    },
+    {
+      method: "stepUpOptions",
+      failing: () => ({ CHALLENGES: rejecting(env.CHALLENGES, "issue") }),
+      request: (browser) => browser.post("/auth/step-up/options"),
+      ceremony: "step-up",
+      signedIn: "live",
+      onRecord: true,
+    },
+    {
+      method: "enrolOptions",
+      failing: () => ({ CREDENTIAL_LABELS: rejecting(env.CREDENTIAL_LABELS, "mint") }),
+      request: (browser) => browser.post("/me/credentials/enrol/options"),
+      ceremony: "enrol",
+      signedIn: "stepped-up",
+      onRecord: true,
+    },
+  ];
+
+  for (const { method, failing, request, ceremony, signedIn, onRecord } of failures) {
+    it(`${method} gets the uniform refusal, recorded as options-internal-error`, async () => {
+      const app = testApp();
+      const browser = app.browser();
+      const recordId = signedIn ? (await browser.register(uniqueName())).recordId : "";
+      if (signedIn === "stepped-up") await browser.stepUp();
+      app.vars = failing();
+
+      const refused = await served(request(browser, recordId));
+
+      expect(refused.status).toBe(400);
+      expect(await refused.text()).toBe(REFUSAL);
+      const recorded = onRecord
+        ? await failuresOn(app.storagePrefix, recordId)
+        : await globalFailuresFrom(app.storagePrefix, browser);
+      expect(recorded).toContainEqual({ ceremony, cause: "options-internal-error" });
+    });
+  }
+
+  it("is refused no sooner than the refusal floor", async () => {
+    const FLOOR = 200;
+    const app = testApp({ vars: { REFUSAL_FLOOR_MS: String(FLOOR) } });
+    const browser = app.browser();
+    app.vars.CHALLENGES = rejecting(env.CHALLENGES, "issue");
+
+    const started = Date.now();
+    const refused = await browser.post("/auth/login/options");
+
+    expect(refused.status).toBe(400);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(FLOOR);
+  });
+});
+
+describe("options past their per-source limit get the uniform refusal, unrecorded", () => {
   const routes: [string, unknown][] = [
     ["/auth/register/options", { memberName: uniqueName() }],
     ["/auth/login/options", {}],
@@ -88,8 +194,21 @@ describe("anonymous options past the per-source limit get the uniform refusal", 
 
       expect(refused.status).toBe(400);
       expect(await refused.text()).toBe(REFUSAL);
+      expect(await globalFailuresFrom(app.storagePrefix, browser)).toEqual([]);
     });
   }
+
+  it("/auth/member-name", async () => {
+    const app = testApp({ rateLimits: { nameCheckPerSource: { limit: 1, windowMs: HOUR } } });
+    const browser = app.browser();
+    await browser.get(`/auth/member-name?name=${uniqueName()}`);
+
+    const refused = await browser.get(`/auth/member-name?name=${uniqueName()}`);
+
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toBe(REFUSAL);
+    expect(await globalFailuresFrom(app.storagePrefix, browser)).toEqual([]);
+  });
 });
 
 describe("without a live session", () => {

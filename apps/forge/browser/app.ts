@@ -299,7 +299,6 @@ async function refresh() {
   showApp(me ? { recordId: me.recordId, memberName: me.memberName, operator: false } : null);
   // Signed in, the signed-out actions are hidden and use no space in the app bar. Thus the account button stays at its right edge.
   byId("signed-out-actions").hidden = me !== null;
-  byId("open-register").hidden = me !== null;
   promoterBadge();
   route();
 }
@@ -325,12 +324,12 @@ async function deleteProject(id: string, name: string) {
   await refresh();
 }
 
-/** The operator's list of every project, in settings, each with a Delete button. */
+/** The operator's list of every project, in settings, each with a Delete button. The forge asks for a step-up and logs it. */
 async function operatorProjects() {
   const load = byId<HTMLButtonElement>("operator-projects-load");
   load.disabled = true;
   load.textContent = "Listing…";
-  const listed = await forge.operatorProjects().finally(() => {
+  const listed = await forge.operatorProjects(steps("Listing projects…")).finally(() => {
     load.disabled = false;
     load.textContent = "List projects";
   });
@@ -649,7 +648,7 @@ byId("reset").addEventListener(
     if (current) await deleteProject(current.id, current.name);
   }),
 );
-byId("operator-projects-load").addEventListener("click", guard(operatorProjects));
+byId("operator-projects-load").addEventListener("click", passkeyAction(operatorProjects));
 // A project without its inception commit or its first policy shows an approval button in the history band.
 byId("graph").addEventListener("click", (event) => {
   if ((event.target as HTMLElement).closest("[data-action=incept]")) passkeyAction(incept)();

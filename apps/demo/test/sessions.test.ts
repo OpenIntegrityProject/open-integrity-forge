@@ -1,5 +1,6 @@
+import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { RevocationEvent } from "passkey-cloudflare";
+import { createPasskeys, SESSION_LIFETIME_MS, type RevocationEvent } from "passkey-cloudflare";
 import { testApp, uniqueName } from "./harness.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -15,6 +16,58 @@ describe("sessions", () => {
     expect((await browser.get("/me")).status).toBe(200);
     now = start + 7 * DAY;
     expect((await browser.get("/me")).status).toBe(401);
+  });
+
+  it("last the configured lifetime, with a cookie that agrees", async () => {
+    let now = Date.now();
+    const browser = testApp({ clock: () => now, sessionLifetimeMs: DAY }).browser();
+    const options = await browser.json(browser.post("/auth/register/options", { memberName: uniqueName() }));
+    const response = await browser.post("/auth/register/verify", {
+      response: await browser.authenticator.create(options),
+    });
+    const start = now;
+
+    expect(response.headers.get("Set-Cookie")).toContain("Max-Age=86400");
+    now = start + DAY - 1;
+    expect((await browser.get("/me")).status).toBe(200);
+    now = start + DAY;
+    expect((await browser.get("/me")).status).toBe(401);
+  });
+
+  it("last seven days, with a cookie that agrees, when no lifetime is set", async () => {
+    const browser = testApp().browser();
+    const options = await browser.json(browser.post("/auth/register/options", { memberName: uniqueName() }));
+    const response = await browser.post("/auth/register/verify", {
+      response: await browser.authenticator.create(options),
+    });
+
+    expect(SESSION_LIFETIME_MS).toBe(7 * DAY);
+    expect(response.headers.get("Set-Cookie")).toContain(`Max-Age=${(7 * DAY) / 1000}`);
+  });
+
+  it.each([
+    ["above 30 days", 31 * DAY],
+    ["zero", 0],
+    ["a fraction of a millisecond", DAY + 0.5],
+    ["negative", -DAY],
+  ])("cannot be configured to last %s", (_, sessionLifetimeMs) => {
+    expect(() =>
+      createPasskeys(env, {
+        rp: { id: "example.com", name: "Example", origin: "https://example.com" },
+        refusalFloorMs: 0,
+        sessionLifetimeMs,
+      }),
+    ).toThrow(/30 days/);
+  });
+
+  it("can be configured to last exactly 30 days", () => {
+    expect(() =>
+      createPasskeys(env, {
+        rp: { id: "example.com", name: "Example", origin: "https://example.com" },
+        refusalFloorMs: 0,
+        sessionLifetimeMs: 30 * DAY,
+      }),
+    ).not.toThrow();
   });
 
   it("are listed with when they started and from what browser", async () => {

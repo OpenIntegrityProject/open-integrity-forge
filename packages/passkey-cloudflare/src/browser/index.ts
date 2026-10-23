@@ -22,6 +22,7 @@ export {
   needsCapitalNudge,
 } from "../member-name-rules.ts";
 export { formatRecoveryCodes, recoveryCodesHeader, type RecoveryCodesText } from "./recovery-codes.ts";
+export { SECURITY_KEY } from "../security-key.ts";
 export type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -41,6 +42,11 @@ interface WebAuthnGlobals {
     getClientCapabilities?(): Promise<Record<string, boolean | undefined>>;
     isConditionalMediationAvailable?(): Promise<boolean>;
     signalUnknownCredential?(passkey: UnknownPasskey): Promise<void>;
+  };
+  document?: { hasFocus(): boolean };
+  window?: {
+    addEventListener(type: "focus", listener: () => void): void;
+    removeEventListener(type: "focus", listener: () => void): void;
   };
 }
 
@@ -233,10 +239,21 @@ export function credentialToJSON(credential: unknown): RegistrationResponseJSON 
 export type CreateResult =
   | { result: "created"; response: RegistrationResponseJSON }
   | { result: "not-created" }
-  | { result: "already-registered" };
+  | { result: "already-registered" }
+  | { result: "not-focused" };
 
-/** Make a passkey, for registration, recovery, rebinding or enrolment. */
+/** How long `createPasskey` waits for the page to get focus back before it gives up. */
+export const PAGE_FOCUS_WAIT_MS = 2000;
+
+/**
+ * Make a passkey, for registration, recovery, rebinding or enrolment. Safari
+ * refuses `create` from a page without focus, and focus can lag a sheet that
+ * just closed, such as a step-up's. So on a page without focus it waits up to
+ * `PAGE_FOCUS_WAIT_MS` for it, and returns not-focused, without asking the
+ * browser, if it does not come back: the person can press again.
+ */
 export async function createPasskey(options: PublicKeyCredentialCreationOptionsJSON): Promise<CreateResult> {
+  if (!(await pageFocused())) return { result: "not-focused" };
   let credential;
   try {
     credential = await webAuthn().navigator.credentials.create({ publicKey: creationOptionsFromJSON(options) });
@@ -247,6 +264,22 @@ export async function createPasskey(options: PublicKeyCredentialCreationOptionsJ
     throw error;
   }
   return { result: "created", response: credentialToJSON(credential) as RegistrationResponseJSON };
+}
+
+/** Whether the page has focus, or gets it within the wait; true outside a page. */
+function pageFocused(): Promise<boolean> {
+  const { document, window } = webAuthn();
+  if (!document || !window || document.hasFocus()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const settle = (focused: boolean) => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
+      resolve(focused);
+    };
+    const onFocus = () => settle(true);
+    const timer = setTimeout(() => settle(false), PAGE_FOCUS_WAIT_MS);
+    window.addEventListener("focus", onFocus);
+  });
 }
 
 const errorName = (error: unknown) => (error as { name?: unknown } | null | undefined)?.name;
